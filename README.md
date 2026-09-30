@@ -193,10 +193,10 @@ built in the open.
 | `plugins/sleep-guard` | ✅ work-aware sleep inhibition | 54 |
 | `plugins/mobile-bridge` | ✅ push, privacy curtain, wake trigger | 60 |
 | `wol-bridge` | ✅ magic packets + HTTP endpoint | 73 |
-| Android app | ✅ builds; APK + 21 unit tests verified locally | 21 |
+| Android app | ✅ builds; APK + 30 unit tests verified locally | 30 |
 | CI | ⏸ workflow ready on a branch, blocked on a GitHub token scope | — |
 
-208 tests total. The Android app has been built against a real SDK —
+217 tests total. The Android app has been built against a real SDK —
 `BUILD SUCCESSFUL`, a 9.5 MB debug APK, and its 21 unit tests passing — so it is
 verified rather than merely written.
 
