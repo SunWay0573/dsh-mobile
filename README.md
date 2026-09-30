@@ -196,7 +196,12 @@ built in the open.
 | Android app | ✅ builds; APK + 30 unit tests verified locally | 30 |
 | CI | ⏸ workflow ready on a branch, blocked on a GitHub token scope | — |
 
-217 tests total. The Android app has been built against a real SDK —
+217 tests total, plus integration verification against a real DSH host: both
+plugins were installed into an isolated profile and booted, which is how three
+silent-non-load bugs were found that no typecheck or unit test could see (see
+[`scripts/check-plugins.mjs`](scripts/check-plugins.mjs)).
+
+The Android app has been built against a real SDK —
 `BUILD SUCCESSFUL`, a 9.5 MB debug APK, and its 21 unit tests passing — so it is
 verified rather than merely written.
 

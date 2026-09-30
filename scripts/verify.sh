@@ -118,7 +118,11 @@ if selected plugins; then
       (cd plugins && pnpm install --frozen-lockfile >/dev/null 2>&1) \
         || (cd plugins && pnpm install >/dev/null 2>&1)
     fi
-    run "plugins typecheck against DSH types" bash -c 'cd plugins && npx tsc -b --force'
+    # Structural checks live in their own file. They encode three bugs that
+    # shipped and were only caught by booting a real DSH host, none of which a
+    # typecheck or a unit test can see. See scripts/check-plugins.mjs.
+    run "plugins are structurally loadable by a DSH host" node scripts/check-plugins.mjs
+
     run "plugins build" bash -c 'cd plugins && pnpm run build'
     run "sleep-guard tests" bash -c 'cd plugins/sleep-guard && node --test test/*.test.ts'
     run "mobile-bridge tests" bash -c 'cd plugins/mobile-bridge && node --test test/*.test.ts'

@@ -3,6 +3,29 @@
 The outbound half of remote control: things DSH cannot tell a phone that is not
 currently connected.
 
+## Install
+
+```sh
+dsh plugin --profile web add /path/to/plugins/mobile-bridge
+```
+
+Then restart the host. There is no separate enable step: adding the package and
+restarting is the whole procedure.
+
+### Three ways this silently does nothing
+
+All three were found by booting a real host, and none of them is a type error or
+a failing test — in every case the package is correct, it simply never runs.
+
+| Symptom | Cause |
+|---|---|
+| `dsh plugin add` prints `declares no dsh.bundle — installed as a plain dependency` | The package needs `dsh.bundle.patch`, or the host never mounts it |
+| `failed to import` at boot | A **value** import (not `import type`) from a package that is only a dev dependency; it does not exist at runtime |
+| `failed to import`, package resolves fine by hand | The patch's `name:` does not exactly match the package's own name — the loader imports that string verbatim |
+
+`scripts/check-plugins.mjs` checks all three from source, so they cannot come
+back unnoticed.
+
 ## 1. Push notifications — implemented
 
 DSH can tell a **connected** client that it needs a decision. It cannot reach a

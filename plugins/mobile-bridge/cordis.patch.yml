@@ -1,0 +1,18 @@
+# The profile layer this package contributes.
+#
+# A package without a dsh.bundle declaration installs as a plain dependency and
+# is never mounted: the host reports "failed to import" and the plugin silently
+# does nothing.
+#
+# The name below must equal this package's own name exactly. It is not derived
+# from the directory, and it is not a convention -- the loader imports whatever
+# string is here. A hand-written value that is merely close (this file once said
+# dsh-mobile-mobile-bridge for a package called dsh-mobile-bridge) produces a
+# plugin that never loads and an error message that reads like an import bug.
+#
+# No config is set here on purpose: everything user-facing belongs in the
+# profile patch layer, so an operator can override it without editing an
+# installed package.
+- insert:
+    - id: mobile-bridge
+      name: 'dsh-mobile-bridge'
