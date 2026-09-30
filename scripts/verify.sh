@@ -17,9 +17,11 @@
 # uses.
 #
 # Usage:
-#   scripts/verify.sh                       # everything available here
+#   scripts/verify.sh                       # everything, including integration
+#   scripts/verify.sh --without-integration # skip the slow host boot
 #   scripts/verify.sh --strict              # missing toolchains are failures
 #   scripts/verify.sh --only=plugins        # one section (what CI jobs use)
+#   scripts/verify.sh --only=integration
 #   scripts/verify.sh --only=hygiene,android
 #
 set -uo pipefail
@@ -29,11 +31,14 @@ cd "$REPO_ROOT" || exit 1
 
 STRICT=0
 ONLY=""
+WITH_INTEGRATION=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --strict) STRICT=1 ;;
     --only=*) ONLY="${1#--only=}" ;;
     --only) shift; ONLY="${1:-}" ;;
+    --with-integration) WITH_INTEGRATION=1 ;;
+    --without-integration) WITHOUT_INTEGRATION=1 ;;
     -h|--help) sed -n '3,26p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) printf 'unknown option: %s\n' "$1" >&2; exit 2 ;;
   esac
@@ -41,6 +46,14 @@ while [[ $# -gt 0 ]]; do
 done
 
 selected() {
+  # A full run includes integration by default. A check that exists but is never
+  # run is the exact failure mode this repository kept hitting: the plugins were
+  # installed, typechecked and fully tested, and never loaded. Opt out with
+  # --without-integration.
+  if [[ "$1" == "integration" && -z "$ONLY" ]]; then
+    [[ "${WITHOUT_INTEGRATION:-0}" == "1" ]] && return 1
+    return 0
+  fi
   [[ -z "$ONLY" ]] && return 0
   [[ ",$ONLY," == *",$1,"* ]]
 }
@@ -184,6 +197,21 @@ CHECK
     else
       bad "APK produced"
     fi
+  fi
+fi
+
+# ── Integration ─────────────────────────────────────────────────────────────
+# Boots a real DSH host with the plugins installed. Slow on the first run (it
+# downloads the DSH CLI, then caches it) and it needs network, but it is the
+# only check that can see a plugin which is installed, typechecks, passes every
+# unit test, and never runs. Three such bugs have shipped here already.
+#
+# Opt in with --only=integration, or pass --with-integration to a full run.
+
+if selected integration; then
+  bold "Integration"
+  if need node "integration"; then
+    run "plugins load in a real DSH host" bash scripts/verify-integration.sh
   fi
 fi
 
