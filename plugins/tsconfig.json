@@ -1,6 +1,7 @@
 {
   "files": [],
   "references": [
-    { "path": "./sleep-guard" }
+    { "path": "./sleep-guard" },
+    { "path": "./mobile-bridge" }
   ]
 }
