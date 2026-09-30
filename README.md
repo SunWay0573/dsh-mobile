@@ -217,3 +217,8 @@ device; and treat your phone as the keys to your computer.
 ## License
 
 MIT — see [LICENSE](LICENSE).
+
+DSH itself is MIT (Copyright (c) 2026 DeepSeek); this project builds against its
+public plugin API and ships none of its code. Details, plus the
+not-affiliated statement, are in
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
