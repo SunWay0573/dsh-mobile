@@ -180,6 +180,13 @@ scripts/verify.sh --strict   # what CI runs; missing toolchains are failures
 scripts/verify.sh --without-integration   # skip the slow one
 ```
 
+A fresh `git clone` verifies green with that one command and no setup steps. It
+installs the plugin dependencies, builds them, runs every test, builds the
+Android APK, and boots a real DSH host with both plugins installed. That last
+part is not decoration: it is the only check that can see a plugin which
+installs cleanly, typechecks, passes every unit test, and never runs — which has
+happened here three times.
+
 The integration check is the interesting one. It installs the plugins into an
 isolated `DSH_HOME`, boots a real DSH host, and asserts two things that nothing
 else can:
