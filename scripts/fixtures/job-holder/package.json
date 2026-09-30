@@ -1,0 +1,14 @@
+{
+  "name": "dsh-e2e-job-holder",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Test fixture: holds a background job open so sleep-guard has work to notice",
+  "type": "module",
+  "main": "index.js",
+  "license": "MIT",
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  }
+}

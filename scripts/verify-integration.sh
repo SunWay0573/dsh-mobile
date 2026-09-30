@@ -59,6 +59,19 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
+# Sampled before anything is installed, because other software on the machine may
+# already be holding sleep assertions of its own.
+BASELINE="$(
+  if [[ "$(uname -s)" == "Darwin" ]]; then
+    pmset -g assertions 2>/dev/null | grep -cE '^[[:space:]]*pid [0-9]+\(caffeinate\)' || true
+  elif command -v systemd-inhibit >/dev/null 2>&1; then
+    systemd-inhibit --list 2>/dev/null | grep -c 'DSH is running a task' || true
+  else
+    echo "unsupported"
+  fi
+)"
+if [[ "$BASELINE" == "unsupported" ]]; then BASELINE=0; fi
+
 bold "Integration: do the plugins actually load in a real host?"
 
 # ── 1. A DSH CLI to load them with ──────────────────────────────────────────
@@ -135,6 +148,16 @@ for name in "${PLUGINS[@]}"; do
   fi
 done
 
+# The job-holder fixture is installed alongside, so sleep-guard has something to
+# notice. See scripts/fixtures/README.md for why a fixture is needed at all.
+HOLDER="$REPO_ROOT/scripts/fixtures/job-holder"
+if [[ -d "$HOLDER" ]]; then
+  "$DSH" plugin --profile web add "$HOLDER" >/dev/null 2>&1
+  pass "job-holder fixture installed"
+else
+  fail "job-holder fixture missing at $HOLDER"
+fi
+
 # ── 3. Both rows must appear in the composed tree ───────────────────────────
 # A package can be in the bundle list and still contribute nothing if its patch
 # is wrong. The dumped config is what the host will actually load.
@@ -184,6 +207,86 @@ if grep -qE "^\s*(Error|TypeError|ReferenceError):" "$boot_log"; then
   grep -E "^\s*(Error|TypeError|ReferenceError):" "$boot_log" | head -5 | sed 's/^/       /'
 else
   pass "no uncaught errors in the host log"
+fi
+
+# ── 5. Does sleep-guard actually hold an assertion? ─────────────────────────
+# Loading is not working. Everything above can pass while the plugin never holds
+# anything, which is the one thing it exists to do. The fixture opens a job; this
+# watches the platform's own view of the world for the assertion to appear and
+# then to go away.
+#
+# Counted as a *difference from a baseline*, not an absolute. A machine very
+# often already has a `caffeinate` running for some unrelated reason -- this one
+# did, from a keep-awake agent installed months earlier -- and an absolute count
+# would report "held" before the host even started and "leaked" forever after.
+# The baseline is sampled below, before anything is installed.
+assertion_count() {
+  if [[ "$(uname -s)" == "Darwin" ]]; then
+    # One line per assertion. Matching loosely would also catch the
+    # "Details: caffeinate asserting forever" line and double-count.
+    pmset -g assertions 2>/dev/null | grep -cE '^[[:space:]]*pid [0-9]+\(caffeinate\)' || true
+  elif command -v systemd-inhibit >/dev/null 2>&1; then
+    systemd-inhibit --list 2>/dev/null | grep -c 'DSH is running a task' || true
+  else
+    echo "unsupported"
+  fi
+}
+
+mechanism="$(assertion_count)"
+if [[ "$mechanism" == "unsupported" ]]; then
+  info "skipping the assertion check: nothing to observe on $(uname -s)"
+else
+  # Wait for the fixture to announce it took a job.
+  for _ in $(seq 1 40); do
+    grep -q "dsh-e2e-job-holder: holding job" "$boot_log" 2>/dev/null && break
+    sleep 1
+  done
+
+  if ! grep -q "dsh-e2e-job-holder: holding job" "$boot_log" 2>/dev/null; then
+    fail "the fixture never started a job, so the assertion cannot be observed"
+    sed 's/^/       /' "$boot_log" | tail -10
+  else
+    pass "fixture opened a background job (baseline was $BASELINE)"
+
+    held="$BASELINE"
+    for _ in $(seq 1 20); do
+      held="$(assertion_count)"
+      [[ "$held" -gt "$BASELINE" ]] && break
+      sleep 1
+    done
+
+    if [[ "$held" -gt "$BASELINE" ]]; then
+      pass "sleep-guard holds an assertion while work is in flight ($BASELINE -> $held)"
+    else
+      fail "no new sleep assertion appeared while a job was running"
+      info "this is the plugin's whole purpose; check that sleep-guard activated"
+    fi
+
+    # …and it must be released. A leaked assertion is the failure mode this
+    # plugin is designed around: it keeps a machine awake in an empty room, and
+    # it survives the plugin being unloaded.
+    for _ in $(seq 1 45); do
+      grep -q "dsh-e2e-job-holder: released job" "$boot_log" 2>/dev/null && break
+      sleep 1
+    done
+
+    if grep -q "dsh-e2e-job-holder: released job" "$boot_log" 2>/dev/null; then
+      after=""
+      for _ in $(seq 1 15); do
+        after="$(assertion_count)"
+        [[ "$after" -le "$BASELINE" ]] && break
+        sleep 1
+      done
+      if [[ "$after" -le "$BASELINE" ]]; then
+        pass "the assertion was released once the work finished (back to $after)"
+      else
+        fail "an assertion is still held after the job finished: leak ($BASELINE -> $after)"
+        info "a leaked assertion keeps the machine awake until it is rebooted"
+      fi
+    else
+      fail "the fixture never released its job"
+    fi
+  fi
 fi
 
 # ── Summary ─────────────────────────────────────────────────────────────────

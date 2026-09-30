@@ -1,0 +1,12 @@
+# Test fixture layer.
+#
+# `name` must equal the package's own name exactly — the loader imports that
+# string verbatim, and a value that is merely close produces a plugin that never
+# loads with an error that reads like an import bug.
+- insert:
+    - id: e2e-job-holder
+      name: 'dsh-e2e-job-holder'
+      config:
+        # Long enough for the integration script to boot, sample the assertion
+        # state twice, and still see the release happen.
+        holdMs: 25000
