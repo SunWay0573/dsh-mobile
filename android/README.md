@@ -96,9 +96,50 @@ official file from the Gradle 8.9.0 tag, SHA-256:
 The wrapper jar is a binary that conventionally gets committed; verifying the
 hash is how you check it has not been swapped.
 
-**Nothing here has been compiled yet.** There is no Android SDK on the machine
-this was written on, so GitHub Actions is the first real compile. Expect the
-first run to be where any remaining API mismatch surfaces.
+### Verified
+
+This project has been built and tested locally, against a real Android SDK:
+
+```
+BUILD SUCCESSFUL in 58s
+41 actionable tasks: 21 executed, 20 up-to-date
+```
+
+```
+app/build/outputs/apk/debug/app-debug.apk   9,528,992 bytes
+  classes.dex, AndroidManifest.xml, resources.arsc all present
+
+testDebugUnitTest
+  UrlsTest        tests=6  failures=0 errors=0
+  WakeOnLanTest   tests=15 failures=0 errors=0
+```
+
+SDK used: `platforms;android-35`, `build-tools;35.0.0`, JDK 17.
+
+Keep `android/local.properties` (gitignored) pointing at your SDK:
+
+```properties
+sdk.dir=/Users/you/Library/Android/sdk
+```
+
+### If dependency resolution fails
+
+Gradle pulls from `repo.maven.apache.org`, `dl.google.com` and
+`plugins.gradle.org`, and **which of those is reachable varies by network**. Two
+things that were needed here, neither of which should be committed:
+
+- A proxy, in `~/.gradle/gradle.properties`:
+  ```properties
+  systemProp.https.proxyHost=127.0.0.1
+  systemProp.https.proxyPort=7897
+  ```
+- Or a distribution mirror, for a network where `services.gradle.org` is
+  unreachable — edit `distributionUrl` in
+  `gradle/wrapper/gradle-wrapper.properties` locally. Prefer a mirror you trust;
+  the committed URL stays official so CI and everyone else gets the real thing.
+
+A single `Remote host terminated the handshake` failure is usually transient
+rather than a real block — retry before concluding anything.
 
 ## Not implemented yet
 

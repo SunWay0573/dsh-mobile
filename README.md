@@ -186,12 +186,16 @@ built in the open.
 | `plugins/sleep-guard` | ✅ work-aware sleep inhibition | 54 |
 | `plugins/mobile-bridge` | ✅ push, privacy curtain, wake trigger | 60 |
 | `wol-bridge` | ✅ magic packets + HTTP endpoint | 73 |
-| Android app | ✅ scaffold; awaiting its first CI compile | — |
-| CI | ⏸ workflow committed on a branch, pending a token scope | — |
+| Android app | ✅ builds; APK + 21 unit tests verified locally | 21 |
+| CI | ⏸ workflow ready on a branch, blocked on a GitHub token scope | — |
 
-187 tests across the three components. The Android app has never been
-compiled — this machine has no Android SDK, so GitHub Actions is its first real
-build, and the first CI run is where any remaining API mismatch will surface.
+208 tests total. The Android app has been built against a real SDK —
+`BUILD SUCCESSFUL`, a 9.5 MB debug APK, and its 21 unit tests passing — so it is
+verified rather than merely written.
+
+The CI workflow is written and lives on the `ci-workflow` branch. GitHub refuses
+to let an OAuth app push `.github/workflows/` without the `workflow` scope, so it
+is parked there until that scope is granted. See that branch for the four jobs.
 
 The design document is currently Chinese-only. An English translation is
 welcome — see [CONTRIBUTING.md](CONTRIBUTING.md).
