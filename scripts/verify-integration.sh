@@ -247,10 +247,24 @@ else
 fi
 
 # Loading is not the same as working: a plugin can mount and still throw on its
-# first event. Any uncaught error in the log is a failure.
-if grep -qE "^\s*(Error|TypeError|ReferenceError):" "$boot_log"; then
+# first event.
+#
+# The pattern has to cover DSH's actual shape, which is NOT a bare `Error:` at
+# the start of a line. A plugin failure reads:
+#
+#   e2e-job-holder (dsh-e2e-job-holder): Error: background jobs unavailable...
+#       at Proxy.start (...)
+#
+# An earlier version of this checked only for `^\s*Error:` and so reported
+# "no uncaught errors in the host log" on a run whose log contained exactly that
+# line -- it missed the one thing it existed to catch, and reported a pass.
+#
+# Anchored so it still cannot match the word "Error:" inside a payload or a
+# quoted string.
+ERR_RE='^(\s*|[^:]+ \([^)]+\): )(Error|TypeError|ReferenceError|RangeError|SyntaxError|AggregateError):'
+if grep -qE "$ERR_RE" "$boot_log"; then
   fail "the host logged an uncaught error:"
-  grep -E "^\s*(Error|TypeError|ReferenceError):" "$boot_log" | head -5 | sed 's/^/       /'
+  grep -E "$ERR_RE" "$boot_log" | head -5 | sed 's/^/       /'
 else
   pass "no uncaught errors in the host log"
 fi
