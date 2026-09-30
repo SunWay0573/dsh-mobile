@@ -56,7 +56,7 @@ that failure mode is far worse than a missing push.
     rateLimitPerMinute: 20
 ```
 
-## 2. Privacy curtain — not implemented yet
+## 2. Privacy curtain — implemented as `lock_screen`
 
 Locks the screen while you are operating remotely, so nobody standing at the
 machine can read your conversation or touch anything.
@@ -72,22 +72,52 @@ overlay can be dismissed locally, a lock screen cannot.
 "/System/Library/CoreServices/Menu Extras/User.menu/Contents/Resources/CGSession" -suspend
 ```
 
-No root required. What is missing is the **trigger**: the plugin needs a signal
-for "a remote client is now driving this session", which is a different
-subscription from anything above and has not been wired yet.
+No root, no accessibility permission.
 
-## 3. Wake trigger — not implemented yet
+**There is no unlock, deliberately.** Unlocking needs the local user's
+credentials, and a plugin that could unlock the machine for a remote caller
+would defeat the entire point. The way out is to walk over and type your
+password, which is exactly the property you want.
 
-A command the phone calls to wake the machine, delegating to
-[`wol-bridge`](../../wol-bridge/) — a sleeping machine cannot send its own wake
-packet. Straightforward once there is a route for the phone to call; see the
-`wol-bridge` README for the topology constraint.
+### On the trigger
+
+The action is one command; knowing *when* to run it is the hard part. There is
+no "a remote client just connected" subscription available to a host plugin, so
+rather than guess at a heuristic — locking on every turn would lock the screen
+while you are sitting in front of it — this is exposed as a **tool the agent can
+call**. You are already talking to the agent; ask it to lock the screen.
+
+`lock_screen` returns `{ ok, message }` and never throws. A timer that fires
+while the helper is still running is treated as **success**, because the macOS
+helper is known to linger once the lock is up and reporting failure there would
+send you off to debug a working setup.
+
+## 3. Wake trigger — implemented as `wake_computer`
+
+Asks a [`wol-bridge`](../../wol-bridge/) on your LAN to send a magic packet.
+This plugin cannot send it itself, and neither can anything else running on a
+sleeping machine — see that component's README for why this is physics rather
+than a missing feature.
+
+Registered **only when `wakeBridgeUrl` is configured**. A tool that can only
+fail is worse than no tool: the agent would call it and report a confusing
+error instead of saying the feature is unconfigured.
+
+The result never claims the machine is awake — `ok` means the bridge accepted
+the request, and the message says so. Claiming more would have you debugging
+working setup when the machine is merely slow to resume.
+
+```yaml
+    wakeBridgeUrl: http://127.0.0.1:8787   # behind the same tunnel as the host
+    wakeBridgeToken: <shared secret>
+    wakeMac: aa:bb:cc:dd:ee:ff             # optional; omit if the bridge knows
+```
 
 ## Tests
 
 ```sh
 cd plugins/mobile-bridge
-pnpm test     # 41 tests
+pnpm test     # 60 tests
 pnpm build
 ```
 

@@ -55,6 +55,19 @@ function fakeContext(): {
       effectDisposer = callback() as () => unknown
       return () => {}
     },
+    // The tools registry is injected optionally, so a host without it still
+    // gets notifications. The fake supplies it eagerly; a separate test covers
+    // the host that does not have it.
+    inject: (_deps: string[], callback: (scoped: unknown) => void) => {
+      callback({
+        logger: {
+          info: (m: string) => { infos.push(m) },
+          warn: (m: string) => { warnings.push(m) },
+        },
+        effect: (cb: () => unknown) => { cb(); return () => {} },
+        tools: { register: () => () => {} },
+      })
+    },
     agents: { list: () => [], roots: () => [] },
   }
 

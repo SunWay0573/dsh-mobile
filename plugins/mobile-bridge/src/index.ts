@@ -14,20 +14,20 @@ import z from '@deepseek-ai/schemastery'
 // merge. Erased at runtime.
 import type {} from '@deepseek-ai/dsh-user-approval'
 import type { Agent } from '@deepseek-ai/dsh-agent'
+import { defineTool } from '@deepseek-ai/dsh-tools'
 
-import {
-  RateLimiter,
-  approvalNeededMessage,
-  turnFinishedMessage,
-} from './events.ts'
+import { RateLimiter, approvalNeededMessage, turnFinishedMessage } from './events.ts'
 import { Notifier } from './notify.ts'
+import { ScreenCurtain } from './curtain.ts'
+import { WakeBridge } from './wake.ts'
 
 export const name = 'dsh-mobile-mobile-bridge'
 
 /**
  * `agents` supplies the live agents whose status transitions signal a finished
  * turn. The approval event needs no service — it arrives through ordinary
- * event dispatch.
+ * event dispatch. `tools` is injected optionally inside `apply`, so a host
+ * without the tools registry still gets notifications.
  */
 export const inject = ['agents']
 
@@ -55,6 +55,19 @@ export interface Config {
   notifyOnTurnEnd?: boolean
   /** Maximum notifications per session per minute. */
   rateLimitPerMinute?: number
+  /**
+   * Base URL of a `wol-bridge` on your LAN, e.g. `http://127.0.0.1:8787`.
+   * Without it the wake tool is not registered: a tool that can only fail is
+   * worse than no tool, because the agent will call it and report a confusing
+   * error instead of saying the feature is unconfigured.
+   */
+  wakeBridgeUrl?: string
+  /** Shared secret for that bridge, when it requires one. */
+  wakeBridgeToken?: string
+  /** Target MAC for the wake tool, when the bridge is not preconfigured. */
+  wakeMac?: string
+  /** Register the `lock_screen` and `wake_computer` tools. */
+  tools?: boolean
 }
 
 export const Config: z<Config> = z.object({
@@ -67,6 +80,11 @@ export const Config: z<Config> = z.object({
     .description('Notify when a turn finishes'),
   rateLimitPerMinute: z.natural().default(20)
     .description('Maximum notifications per session per minute'),
+  wakeBridgeUrl: z.string().description('Base URL of a wol-bridge on the LAN'),
+  wakeBridgeToken: z.string().description('Shared secret for the wake bridge'),
+  wakeMac: z.string().description('Target MAC address for the wake tool'),
+  tools: z.boolean().default(true)
+    .description('Register the lock_screen and wake_computer tools'),
 })
 
 /**
@@ -156,6 +174,117 @@ export function apply(ctx: Context, config: Config): void {
       }
     }
   }, 'mobile-bridge.notifications()')
+
+  if (config.tools !== false) registerTools(ctx, config)
+}
+
+/**
+ * The shape both tools return.
+ *
+ * A tool must declare its output schema — without one the return type infers as
+ * `never` and the definition does not typecheck. That is a useful constraint
+ * rather than an obstacle: it forces the tool to say what it produces.
+ */
+const ACTION_OUTPUT_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    ok: { type: 'boolean', required: true, description: 'Whether the action succeeded.' },
+    message: { type: 'string', required: true, description: 'What happened, in one sentence.' },
+  },
+} as const
+
+/**
+ * Render the result for the model.
+ *
+ * The message alone, not the JSON: the model needs to know what happened, and a
+ * sentence is what it will relay to the user. The `ok` flag is for the client,
+ * which reads the structured value directly.
+ */
+function renderActionResult(
+  _args: unknown,
+  value: { readonly ok: boolean; readonly message: string },
+): Array<{ type: 'text'; text: string }> {
+  return [{ type: 'text', text: value.message }]
+}
+
+/**
+ * Register the two tools a remote operator needs the agent to be able to run.
+ *
+ * `tools` is injected rather than declared, so a host without the tools
+ * registry still gets notifications instead of failing to mount entirely.
+ *
+ * These exist because the trigger is the hard part, not the action. Locking a
+ * screen is one command; knowing *when* to lock it, with no client-connection
+ * signal to subscribe to, is not — so the operator asks, and the agent does it.
+ *
+ * @param ctx - host context.
+ * @param config - plugin configuration.
+ */
+function registerTools(ctx: Context, config: Config): void {
+  const curtain = new ScreenCurtain()
+  const wakeBridgeUrl = config.wakeBridgeUrl
+
+  ctx.inject(['tools'], (toolCtx) => {
+    toolCtx.effect(() => {
+      const disposers: Array<() => void> = []
+
+      disposers.push(toolCtx.tools.register(defineTool({
+        name: 'lock_screen',
+        description:
+          'Lock the screen of the machine this agent runs on, so nobody standing '
+          + 'at it can read the conversation or interfere. Unlocking requires the '
+          + 'local password and cannot be done remotely — that is the point. Use '
+          + 'when the operator is working remotely and wants privacy on site.',
+        parameters: {},
+        output: {
+          schema: ACTION_OUTPUT_SCHEMA,
+          render: renderActionResult,
+        },
+        async execute() {
+          const result = await curtain.lock()
+          return { ok: result.ok, message: result.message }
+        },
+      })))
+
+      // Only registered when a bridge is configured. A tool that can only fail
+      // would have the agent call it and report a confusing error rather than
+      // saying the feature is unconfigured.
+      if (wakeBridgeUrl !== undefined && wakeBridgeUrl !== '') {
+        const bridge = new WakeBridge({
+          url: wakeBridgeUrl,
+          mac: config.wakeMac,
+          token: config.wakeBridgeToken,
+        })
+        disposers.push(toolCtx.tools.register(defineTool({
+          name: 'wake_computer',
+          description:
+            'Wake this machine if it is asleep, by asking a wol-bridge on the same '
+            + 'network to send a Wake-on-LAN packet. Only meaningful when the machine '
+            + 'is unreachable: a running host has nothing to wake.',
+          parameters: {},
+          output: {
+          schema: ACTION_OUTPUT_SCHEMA,
+          render: renderActionResult,
+        },
+          async execute() {
+            const result = await bridge.wake()
+            return { ok: result.ok, message: result.message }
+          },
+        })))
+      }
+
+      return () => {
+        for (const dispose of disposers) {
+          try {
+            dispose()
+          } catch (error) {
+            ctx.logger.warn(`mobile-bridge: tool teardown failed: ${describe(error)}`)
+          }
+        }
+      }
+    }, 'mobile-bridge.tools()')
+  })
 }
 
 /**
