@@ -113,6 +113,13 @@ if selected hygiene; then
   else
     ok "no credential patterns in tracked files"
   fi
+
+  # A broken relative link is invisible in review and invisible in a rendered
+  # diff: the text still reads correctly, and the reader is the one who finds
+  # out. This project cross-references a lot on purpose.
+  if command -v node >/dev/null 2>&1; then
+    run "relative documentation links resolve" node scripts/check-links.mjs
+  fi
 fi
 
 # ── Plugins ─────────────────────────────────────────────────────────────────

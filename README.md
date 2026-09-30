@@ -170,7 +170,7 @@ If these differ, turn off "Private Wi-Fi Address" for that network first.
 See [`docs/setup-power.md`](docs/setup-power.md).
 
 **4. Build and install the app.** Grab an APK from
-[Releases](../../releases), or build it yourself — see [`android/`](android/).
+[Releases](https://github.com/SunWay0573/dsh-mobile/releases), or build it yourself — see [`android/`](android/).
 
 **Verify any of it** with the script CI itself calls:
 
