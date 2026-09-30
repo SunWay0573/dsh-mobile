@@ -23,6 +23,19 @@ DSH already knows. The plugin is small because the host does the hard part.
 dsh plugin --profile web add /path/to/plugins/sleep-guard
 ```
 
+### Three ways this silently does nothing
+
+All three were found by booting a real host, and none is a type error or a
+failing test — in every case the package is correct, it simply never runs.
+
+| Symptom | Cause |
+|---|---|
+| `dsh plugin add` prints `declares no dsh.bundle` | the package needs `dsh.bundle.patch`, or the host never mounts it |
+| `failed to import` at boot | a **value** import from a package that is only a dev dependency |
+| `failed to import`, but the package resolves fine by hand | the patch's `name:` does not exactly match the package's own name |
+
+`scripts/check-plugins.mjs` checks all three from source.
+
 ## Design
 
 The plugin is three layers, chosen so the part that can be *wrong* is the part
