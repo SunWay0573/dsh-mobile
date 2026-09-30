@@ -172,6 +172,13 @@ See [`docs/setup-power.md`](docs/setup-power.md).
 **4. Build and install the app.** Grab an APK from
 [Releases](../../releases), or build it yourself — see [`android/`](android/).
 
+**Verify any of it** with the script CI itself calls:
+
+```sh
+scripts/verify.sh            # 12 checks; skips what this machine cannot do
+scripts/verify.sh --strict   # what CI runs
+```
+
 ---
 
 ## Status

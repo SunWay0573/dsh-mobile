@@ -4,6 +4,22 @@ Thanks for wanting to help. This project is early, so the most useful
 contributions right now are bug reports, platform-specific findings, and the
 pieces listed under [Good first issues](#good-first-issues).
 
+## Verify before you push
+
+```sh
+scripts/verify.sh            # everything available on this machine
+scripts/verify.sh --strict   # what CI runs; missing toolchains are failures
+scripts/verify.sh --only=plugins
+```
+
+This is the same script CI calls, so a local pass means a CI pass. It degrades to
+a skip when a toolchain is absent and says so loudly; `--strict` turns those
+skips into failures, which is what CI passes, because a check that silently did
+nothing looks exactly like a pass.
+
+The Android section needs a JDK and an Android SDK. Without them it skips, and
+you can still verify everything else.
+
 ## Before you start
 
 **Never commit secrets or private topology.** Specifically:
@@ -81,9 +97,12 @@ docs(tunnel): document the trust-fence patch
 ## Pull requests
 
 1. One logical change per PR.
-2. Say what you actually tested, and on what hardware/OS. "Works on my machine"
+2. Run `scripts/verify.sh --strict` and say what it reported. If a section
+   skipped on your machine, say which — that is honest and useful, whereas a
+   bare "tests pass" is neither.
+3. Say what you actually tested, and on what hardware/OS. "Works on my machine"
    is fine as long as you say which machine.
-3. If your change touches power management, networking, or authentication,
+4. If your change touches power management, networking, or authentication,
    explain the failure mode you considered.
 
 ## Good first issues
