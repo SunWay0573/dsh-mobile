@@ -200,7 +200,7 @@ built in the open.
 | `plugins/mobile-bridge` | ✅ push, privacy curtain, wake trigger | 60 |
 | `wol-bridge` | ✅ magic packets + HTTP endpoint | 73 |
 | Android app | ✅ builds; APK + 30 unit tests verified locally | 30 |
-| CI | ⏸ workflow ready on a branch, blocked on a GitHub token scope | — |
+| CI | ⏸ written and on `ci-workflow`; run [`scripts/enable-ci.sh`](scripts/enable-ci.sh) | — |
 
 217 tests total, plus integration verification against a real DSH host. Both
 plugins are installed into an isolated `DSH_HOME` and booted on every
@@ -214,8 +214,21 @@ The Android app has been built against a real SDK —
 verified rather than merely written.
 
 The CI workflow is written and lives on the `ci-workflow` branch. GitHub refuses
-to let an OAuth app push `.github/workflows/` without the `workflow` scope, so it
-is parked there until that scope is granted. See that branch for the four jobs.
+to let an OAuth app push `.github/workflows/` without the `workflow` scope — a
+control that exists so a compromised token cannot silently add CI that
+exfiltrates secrets — so the file waits there.
+
+To finish it:
+
+```sh
+scripts/enable-ci.sh --check    # says exactly what is missing
+gh auth refresh -h github.com -s workflow   # you authorise in a browser
+scripts/enable-ci.sh            # installs and pushes
+```
+
+Five jobs: hygiene, plugins, wol-bridge, integration, android. The integration
+job boots a real DSH host, because that is the only thing that can see a plugin
+which installs, typechecks, passes every unit test and never runs.
 
 The design document is currently Chinese-only. An English translation is
 welcome — see [CONTRIBUTING.md](CONTRIBUTING.md).
