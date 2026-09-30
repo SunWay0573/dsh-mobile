@@ -180,13 +180,18 @@ Early. The design is settled and grounded in a hands-on audit of the DSH source
 and of a shipping commercial remote-desktop tool; the implementation is being
 built in the open.
 
-| Component | State |
-|---|---|
-| Design & architecture | ✅ documented in [`docs/design.zh.md`](docs/design.zh.md) |
-| `sleep-guard` | 🚧 in progress |
-| `mobile-bridge` | 🚧 in progress |
-| `wol-bridge` | 🚧 in progress |
-| Android app | 🚧 in progress |
+| Component | State | Tests |
+|---|---|---|
+| Design & architecture | ✅ [`docs/design.zh.md`](docs/design.zh.md) | — |
+| `plugins/sleep-guard` | ✅ work-aware sleep inhibition | 54 |
+| `plugins/mobile-bridge` | ✅ push, privacy curtain, wake trigger | 60 |
+| `wol-bridge` | ✅ magic packets + HTTP endpoint | 73 |
+| Android app | ✅ scaffold; awaiting its first CI compile | — |
+| CI | ⏸ workflow committed on a branch, pending a token scope | — |
+
+187 tests across the three components. The Android app has never been
+compiled — this machine has no Android SDK, so GitHub Actions is its first real
+build, and the first CI run is where any remaining API mismatch will surface.
 
 The design document is currently Chinese-only. An English translation is
 welcome — see [CONTRIBUTING.md](CONTRIBUTING.md).
