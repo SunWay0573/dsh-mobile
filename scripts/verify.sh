@@ -45,6 +45,26 @@ while [[ $# -gt 0 ]]; do
   shift
 done
 
+# The set `--only` accepts. Kept here so an unknown name is an error rather than
+# a silent no-op -- see the check below for why that mattered.
+KNOWN_SECTIONS="hygiene plugins wol-bridge android integration"
+
+# An unknown section name used to select nothing and exit 0, reporting
+# "0 passed, 0 failed". A CI job configured with a typo would therefore be green
+# while running no checks at all, which is the exact failure this whole
+# repository is built to avoid: a check that exists and never runs.
+if [[ -n "$ONLY" ]]; then
+  IFS=',' read -r -a _requested <<< "$ONLY"
+  for _name in "${_requested[@]}"; do
+    if [[ " $KNOWN_SECTIONS " != *" $_name "* ]]; then
+      printf 'verify.sh: unknown section "%s"\n' "$_name" >&2
+      printf '  known: %s\n' "$KNOWN_SECTIONS" >&2
+      exit 2
+    fi
+  done
+  unset _requested _name
+fi
+
 selected() {
   # A full run includes integration by default. A check that exists but is never
   # run is the exact failure mode this repository kept hitting: the plugins were
@@ -119,6 +139,10 @@ if selected hygiene; then
   # out. This project cross-references a lot on purpose.
   if command -v node >/dev/null 2>&1; then
     run "relative documentation links resolve" node scripts/check-links.mjs
+    # Offline only. Whether an action version exists is a network question, and
+    # a check that fails because someone else's API is down is one people learn
+    # to ignore. Run it with --online before enabling CI.
+    run "CI workflow is well-formed" node scripts/check-workflow.mjs
   fi
 fi
 
@@ -233,6 +257,12 @@ if [[ $FAIL -gt 0 ]]; then
 fi
 if [[ $SKIP -gt 0 && $STRICT -eq 1 ]]; then
   echo "  --strict: skips count as failures"
+  exit 1
+fi
+# A run that checked nothing is not a pass. Reachable only if the guard above is
+# somehow bypassed, which is precisely when a backstop earns its place.
+if [[ $((PASS + FAIL + SKIP)) -eq 0 ]]; then
+  echo "  no checks ran; treating that as a failure rather than a pass"
   exit 1
 fi
 exit 0
