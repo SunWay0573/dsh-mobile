@@ -116,6 +116,8 @@ private fun DshMobileApp(settings: AppSettings, biometricPossible: Boolean) {
     var hostUrl by remember { mutableStateOf(settings.hostUrl) }
     var wakeMac by remember { mutableStateOf(settings.wakeMac) }
     var wakeBroadcast by remember { mutableStateOf(settings.wakeBroadcast) }
+    var wakeBridgeUrl by remember { mutableStateOf(settings.wakeBridgeUrl) }
+    var wakeBridgeToken by remember { mutableStateOf(settings.wakeBridgeToken) }
     var lockWithBiometric by remember { mutableStateOf(settings.lockWithBiometric) }
     var wakeStatus by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
@@ -136,6 +138,10 @@ private fun DshMobileApp(settings: AppSettings, biometricPossible: Boolean) {
             onWakeMacChange = { wakeMac = it },
             wakeBroadcast = wakeBroadcast,
             onWakeBroadcastChange = { wakeBroadcast = it },
+            wakeBridgeUrl = wakeBridgeUrl,
+            onWakeBridgeUrlChange = { wakeBridgeUrl = it },
+            wakeBridgeToken = wakeBridgeToken,
+            onWakeBridgeTokenChange = { wakeBridgeToken = it },
             lockWithBiometric = lockWithBiometric,
             biometricPossible = biometricPossible,
             onLockWithBiometricChange = {
@@ -152,16 +158,10 @@ private fun DshMobileApp(settings: AppSettings, biometricPossible: Boolean) {
             onWake = {
                 settings.wakeMac = wakeMac
                 settings.wakeBroadcast = wakeBroadcast
-                scope.launch {
-                    wakeStatus = try {
-                        WakeOnLan.wake(wakeMac, wakeBroadcast)
-                        "Wake packet sent. Give the machine up to a minute."
-                    } catch (error: IllegalArgumentException) {
-                        "Check the address: ${error.message}"
-                    } catch (error: Exception) {
-                        "Could not send: ${error.message}"
-                    }
-                }
+                settings.wakeBridgeUrl = wakeBridgeUrl
+                settings.wakeBridgeToken = wakeBridgeToken
+                val plan = Wake.plan(wakeBridgeUrl, wakeBridgeToken, wakeMac, wakeBroadcast)
+                scope.launch { wakeStatus = WakeOnLan.attempt(plan) }
             },
         )
 
@@ -182,6 +182,10 @@ private fun HomeScreen(
     onWakeMacChange: (String) -> Unit,
     wakeBroadcast: String,
     onWakeBroadcastChange: (String) -> Unit,
+    wakeBridgeUrl: String,
+    onWakeBridgeUrlChange: (String) -> Unit,
+    wakeBridgeToken: String,
+    onWakeBridgeTokenChange: (String) -> Unit,
     lockWithBiometric: Boolean,
     biometricPossible: Boolean,
     onLockWithBiometricChange: (Boolean) -> Unit,
@@ -254,11 +258,48 @@ private fun HomeScreen(
                     Text("Wake the computer", style = MaterialTheme.typography.titleMedium)
                     Text(
                         "A sleeping machine cannot send its own wake packet, and magic "
-                            + "packets do not cross routers. This works when the phone is on "
-                            + "the same network; from anywhere else you need a wol-bridge on "
-                            + "your LAN.",
+                            + "packets do not cross routers. A direct broadcast therefore "
+                            + "only works from the same network; from anywhere else you "
+                            + "need a wol-bridge on your LAN.",
                         style = MaterialTheme.typography.bodySmall,
                     )
+
+                    // Say which path will be used, because the wrong one fails
+                    // silently: the packet is sent, nothing complains, and the
+                    // machine simply never wakes.
+                    Text(
+                        when (Wake.plan(wakeBridgeUrl, wakeBridgeToken, wakeMac, wakeBroadcast)) {
+                            is WakePlan.ViaBridge ->
+                                "Will ask the bridge over the network. This works from anywhere."
+                            is WakePlan.ViaBroadcast ->
+                                "Will broadcast on the local network. This only works while the " +
+                                    "phone is on the same network as the machine."
+                            WakePlan.NotConfigured ->
+                                "Nothing configured yet."
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+
+                    OutlinedTextField(
+                        value = wakeBridgeUrl,
+                        onValueChange = onWakeBridgeUrlChange,
+                        label = { Text("Bridge address (preferred)") },
+                        placeholder = { Text("http://127.0.0.1:8787") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    OutlinedTextField(
+                        value = wakeBridgeToken,
+                        onValueChange = onWakeBridgeTokenChange,
+                        label = { Text("Bridge shared secret") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Text(
+                        "Leave the bridge blank to use a direct broadcast instead.",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+
                     OutlinedTextField(
                         value = wakeMac,
                         onValueChange = onWakeMacChange,
@@ -278,7 +319,8 @@ private fun HomeScreen(
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         Button(
                             onClick = onWake,
-                            enabled = wakeMac.isNotBlank() && wakeBroadcast.isNotBlank(),
+                            enabled = wakeBridgeUrl.isNotBlank() ||
+                                (wakeMac.isNotBlank() && wakeBroadcast.isNotBlank()),
                         ) { Text("Wake") }
                     }
                     wakeStatus?.let {

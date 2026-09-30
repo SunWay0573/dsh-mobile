@@ -17,7 +17,7 @@ someone else's UI.
 | Feature | Why native |
 |---|---|
 | Host address & settings | Must work before any page loads |
-| Wake-on-LAN sender | UDP broadcast; not available to page JavaScript |
+| Wake-on-LAN | UDP broadcast is unavailable to page JavaScript, and the HTTP path to a bridge is a plain POST |
 | Back navigation | Has to reconcile WebView history with the system back gesture |
 | Session list, push, biometrics | Planned; all need the shell, not the page |
 
@@ -38,16 +38,17 @@ nowhere back to go.
 ```
 app/src/main/java/io/github/sunway0573/dshmobile/
 ├── MainActivity.kt   Compose UI, both screens, back handling, web state
-├── AppSettings.kt    SharedPreferences: host, MAC, broadcast, lock
+├── AppSettings.kt    SharedPreferences: host, wake config, lock
 ├── Biometric.kt      the lock gate
-├── WakeOnLan.kt      packet construction and the datagram send
-├── Urls.kt           address normalisation          ┐ Android-free, so
-└── WebState.kt       failure classification         ┘ unit testable
+├── WakeOnLan.kt      packet construction, the datagram send, the bridge POST
+├── Urls.kt           address normalisation     ┐
+├── WakePlan.kt       which wake path to use    ├ Android-free, so unit testable
+└── WebState.kt       failure classification    ┘
 ```
 
-The two files with no Android imports are the two with judgement in them:
-address handling and failure text. Everything that needs a device is in the
-other four.
+The three files with no Android imports are the three with judgement in them:
+address handling, transport choice, and failure text. Everything that needs a
+device is in the other four.
 
 `SharedPreferences` rather than DataStore: there are four values, they are read
 once, and a synchronous read is what the UI wants.
@@ -231,6 +232,27 @@ time you return.
 
 Process death needs no special handling: the host URL lives in
 `SharedPreferences`, so a fresh process loads it.
+
+### Waking: two paths, and the bridge is preferred
+
+A direct UDP broadcast only reaches the same subnet, because Wake-on-LAN packets
+are broadcast and do not cross routers. That makes it useless in the situation
+the feature exists for — a phone away from home.
+
+So there are two paths, and `WakePlan.kt` decides between them:
+
+| Configured | Path | Works from |
+|---|---|---|
+| A bridge address | `POST` to `wol-bridge` over the tunnel | anywhere |
+| MAC + broadcast only | a local magic packet | the same subnet |
+
+**The bridge wins when both are set**, which the settings screen states rather
+than leaving the user to discover it. The wrong choice fails silently: the
+packet is sent, nothing complains, and the machine never wakes.
+
+`attempt()` never claims the machine is awake. Sending a packet and a machine
+resuming are different events, and saying otherwise sends people off to debug a
+working setup.
 
 ## Still not implemented
 

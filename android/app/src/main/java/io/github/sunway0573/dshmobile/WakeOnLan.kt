@@ -2,9 +2,12 @@ package io.github.sunway0573.dshmobile
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import java.io.IOException
 import java.net.DatagramPacket
 import java.net.DatagramSocket
+import java.net.HttpURLConnection
 import java.net.InetAddress
+import java.net.URL
 
 /**
  * Wake-on-LAN, sent from the phone.
@@ -115,6 +118,79 @@ object WakeOnLan {
             // address, and the failure is silent from the caller's point of view.
             socket.broadcast = true
             socket.send(DatagramPacket(packet, packet.size, target, port))
+        }
+    }
+
+    /**
+     * Carry out a wake plan and describe what happened.
+     *
+     * Never throws: the result is a sentence shown to the user, and a failed
+     * wake attempt is a normal outcome rather than an error. It also never
+     * claims the machine is awake — sending a packet and a machine resuming are
+     * different events, and saying otherwise sends people off to debug a
+     * working setup.
+     *
+     * @param plan what [Wake.plan] chose.
+     * @param bridgeTimeoutMs how long to wait on a bridge before giving up.
+     * @returns a sentence for the user.
+     */
+    internal suspend fun attempt(plan: WakePlan, bridgeTimeoutMs: Int = 10_000): String =
+        withContext(Dispatchers.IO) {
+            when (plan) {
+                is WakePlan.NotConfigured ->
+                    "Nothing is configured to wake. Set a bridge address, or a MAC and a " +
+                        "broadcast address."
+
+                is WakePlan.ViaBroadcast ->
+                    try {
+                        wake(plan.mac, plan.broadcast)
+                        "Wake packet sent on the local network. Give it up to a minute."
+                    } catch (error: IllegalArgumentException) {
+                        "Check the address: ${error.message}"
+                    }
+
+                is WakePlan.ViaBridge -> attemptBridge(plan, bridgeTimeoutMs)
+            }
+        }
+
+    /**
+     * POST to a wol-bridge.
+     *
+     * `HttpURLConnection` rather than `java.net.http.HttpClient`: the latter is a
+     * JDK 11 API that Android does not ship, so it would compile here and fail
+     * on the device.
+     */
+    private fun attemptBridge(plan: WakePlan.ViaBridge, timeoutMs: Int): String {
+        var connection: HttpURLConnection? = null
+        return try {
+            connection = (URL(plan.url).openConnection() as HttpURLConnection).apply {
+                requestMethod = "POST"
+                connectTimeout = timeoutMs
+                readTimeout = timeoutMs
+                doOutput = true
+                setRequestProperty("content-type", "application/json")
+                plan.token?.let { setRequestProperty("authorization", "Bearer $it") }
+            }
+            val body = Wake.bridgeBody(plan.mac)
+            connection.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
+
+            when (val code = connection.responseCode) {
+                in 200..299 ->
+                    "Wake packet requested from the bridge. The machine usually answers " +
+                        "within a minute; a full resume from sleep can take longer."
+
+                401, 403 ->
+                    "The bridge refused the request ($code). Check the shared secret."
+
+                else ->
+                    "The bridge answered $code. Its logs will say why."
+            }
+        } catch (error: IOException) {
+            "Could not reach the bridge: ${error.message ?: error::class.java.simpleName}"
+        } catch (error: Exception) {
+            "Could not reach the bridge: ${error.message ?: error::class.java.simpleName}"
+        } finally {
+            connection?.disconnect()
         }
     }
 }

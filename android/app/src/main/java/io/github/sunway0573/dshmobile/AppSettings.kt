@@ -30,6 +30,23 @@ class AppSettings(context: Context) {
         set(value) = prefs.edit().putString(KEY_WAKE_BROADCAST, value.trim()).apply()
 
     /**
+     * Base URL of a `wol-bridge` on your LAN, e.g. `http://127.0.0.1:8787`
+     * behind the same tunnel as the host.
+     *
+     * This is the only wake path that works when the phone is away from home,
+     * which is the situation the feature exists for. A direct broadcast only
+     * reaches the same subnet.
+     */
+    var wakeBridgeUrl: String
+        get() = prefs.getString(KEY_WAKE_BRIDGE_URL, "") ?: ""
+        set(value) = prefs.edit().putString(KEY_WAKE_BRIDGE_URL, value.trim()).apply()
+
+    /** Shared secret for that bridge, when it requires one. */
+    var wakeBridgeToken: String
+        get() = prefs.getString(KEY_WAKE_BRIDGE_TOKEN, "") ?: ""
+        set(value) = prefs.edit().putString(KEY_WAKE_BRIDGE_TOKEN, value.trim()).apply()
+
+    /**
      * Require a biometric before showing anything.
      *
      * Off by default: a lock the user did not ask for is a lock they will
@@ -40,9 +57,10 @@ class AppSettings(context: Context) {
         get() = prefs.getBoolean(KEY_BIOMETRIC, false)
         set(value) = prefs.edit().putBoolean(KEY_BIOMETRIC, value).apply()
 
-    /** Whether enough is configured to attempt a wake. */
+    /** Whether enough is configured to attempt a wake, by either path. */
     val canWake: Boolean
-        get() = wakeMac.isNotBlank() && wakeBroadcast.isNotBlank()
+        get() = wakeBridgeUrl.isNotBlank() ||
+            (wakeMac.isNotBlank() && wakeBroadcast.isNotBlank())
 
     /** Whether enough is configured to open a session. */
     val canOpenSession: Boolean
@@ -54,5 +72,7 @@ class AppSettings(context: Context) {
         const val KEY_WAKE_MAC = "wake_mac"
         const val KEY_WAKE_BROADCAST = "wake_broadcast"
         const val KEY_BIOMETRIC = "lock_with_biometric"
+        const val KEY_WAKE_BRIDGE_URL = "wake_bridge_url"
+        const val KEY_WAKE_BRIDGE_TOKEN = "wake_bridge_token"
     }
 }
