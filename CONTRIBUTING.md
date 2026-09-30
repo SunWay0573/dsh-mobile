@@ -114,9 +114,15 @@ docs(tunnel): document the trust-fence patch
 
 ## Good first issues
 
-- **Translate `docs/design.zh.md` to English.** It is the single highest-value
-  contribution available right now.
-- **Test Wake-on-LAN on non-Apple hardware** and report what differs.
+- **Test Wake-on-LAN on non-Apple hardware** and report what differs. The
+  packet is verified byte for byte; delivery on a given NIC, switch and subnet is
+  not.
+- **Run `wol-bridge` on a Raspberry Pi** and report what differs from macOS.
+  Linux is where `SO_BROADCAST` is actually enforced, so CI covers it, but nobody
+  has run it on the hardware it is meant for.
+- **Run the Android app on a device.** It builds and its unit tests pass, but
+  anything needing a screen, a WebView or a network is unverified — as is MIUI's
+  appetite for killing backgrounded apps.
 - **Router wake support matrix.** If your router can send a magic packet from
   its admin UI or app, add a row to `docs/setup-power.md`.
 - **Android: verify reconnect after the OS kills the process.**

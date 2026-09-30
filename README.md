@@ -217,7 +217,7 @@ built in the open.
 
 | Component | State | Tests |
 |---|---|---|
-| Design & architecture | ✅ [`docs/design.zh.md`](docs/design.zh.md) | — |
+| Design & architecture | ✅ [`docs/design.md`](docs/design.md) (English), [`docs/design.zh.md`](docs/design.zh.md) (full audit) | — |
 | `plugins/sleep-guard` | ✅ work-aware sleep inhibition | 54 |
 | `plugins/mobile-bridge` | ✅ push, privacy curtain, wake trigger | 68 |
 | `wol-bridge` | ✅ magic packets + HTTP endpoint | 73 |
@@ -253,8 +253,10 @@ Five jobs: hygiene, plugins, wol-bridge, integration, android. The integration
 job boots a real DSH host, because that is the only thing that can see a plugin
 which installs, typechecks, passes every unit test and never runs.
 
-The design document is currently Chinese-only. An English translation is
-welcome — see [CONTRIBUTING.md](CONTRIBUTING.md).
+[`docs/design.md`](docs/design.md) is the English design document: why the
+project is shaped this way, including the decisions that were reversed.
+[`docs/design.zh.md`](docs/design.zh.md) is the longer original, in Chinese,
+with every source reference and measured value behind it.
 
 ---
 
