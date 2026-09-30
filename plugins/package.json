@@ -1,0 +1,19 @@
+{
+  "name": "dsh-mobile-plugins",
+  "private": true,
+  "type": "module",
+  "description": "DSH host plugins for dsh-mobile",
+  "license": "MIT",
+  "engines": {
+    "node": ">=22.18"
+  },
+  "scripts": {
+    "typecheck": "tsc -b --pretty",
+    "test": "node --test --experimental-strip-types \"*/test/**/*.test.ts\"",
+    "build": "tsc -b --pretty"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "^5.7.0"
+  }
+}
