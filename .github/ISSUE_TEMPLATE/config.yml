@@ -6,6 +6,9 @@ contact_links:
   - name: Security vulnerability
     url: https://github.com/SunWay0573/dsh-mobile/security/advisories/new
     about: Report privately. Please do not open a public issue for a security problem.
-  - name: Setup help — tunnel, power, waking
+  - name: Something is not working
+    url: https://github.com/SunWay0573/dsh-mobile/blob/main/docs/troubleshooting.md
+    about: Organised by symptom, and says how to confirm each cause. Start here.
+  - name: Setup guides — tunnel, power, waking
     url: https://github.com/SunWay0573/dsh-mobile/tree/main/docs
-    about: Most "it will not connect" cases are covered by the tunnel and power guides.
+    about: The longer-form setup documentation.

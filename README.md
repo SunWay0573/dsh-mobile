@@ -249,6 +249,22 @@ welcome — see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ---
 
+## When something does not work
+
+[`docs/troubleshooting.md`](docs/troubleshooting.md) is organised by symptom and
+says how to *confirm* each cause rather than only what it might be. The entries
+worth knowing about before they happen:
+
+- **A plugin is installed and does nothing.** Three distinct causes, all of
+  which present identically and all of which pass every automated check.
+- **403 vs 401.** A 403 is a `Host`/`Origin` problem and has nothing to do with
+  authentication. Knowing which one you have saves the most time of anything in
+  that document.
+- **The machine will not wake.** Usually the randomised Wi-Fi MAC address, and
+  the hardware MAC is the wrong one to configure.
+- **A scheduled task did not run.** It will not, if the machine slept through
+  it — the timers are in-process.
+
 ## Contributing
 
 Issues and pull requests are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md).
