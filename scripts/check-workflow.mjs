@@ -115,17 +115,59 @@ if (ONLINE) {
     return 'unreachable'
   }
 
+  /**
+   * Whether a file exists at a ref.
+   *
+   * Separate from `lookup` because the two answer different questions: `lookup`
+   * resolves a ref, this confirms the action lives at the path the reference
+   * names. `gradle/actions/setup-gradle@v4` has a valid repo and tag and would
+   * still fail if `setup-gradle/` were not a directory in it.
+   */
+  const fileExists = (repo, path, ref) => {
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      try {
+        execFileSync('gh', ['api', `repos/${repo}/contents/${path}?ref=${ref}`], { stdio: 'pipe' })
+        return 'ok'
+      } catch (error) {
+        const message = `${error.stderr ?? ''}${error.stdout ?? ''}`
+        if (/HTTP 404|Not Found/.test(message)) return 'missing'
+        if (attempt === 2) return 'unreachable'
+      }
+    }
+    return 'unreachable'
+  }
+
   for (const ref of refs) {
     const [spec, version] = ref.split('@')
     // owner/repo/subdir@ref — the repository is always the first two segments;
     // a subdirectory action is not a nested repository.
-    const repo = spec.split('/').slice(0, 2).join('/')
+    const segments = spec.split('/')
+    const repo = segments.slice(0, 2).join('/')
+    const subdir = segments.slice(2).join('/')
+
     let state = lookup(repo, 'tags', version)
     if (state === 'missing') state = lookup(repo, 'heads', version)
-    if (state === 'missing') problems.push(`${ref}: no such tag or branch on ${repo}`)
+    if (state === 'missing') {
+      problems.push(`${ref}: no such tag or branch on ${repo}`)
+      continue
+    }
     if (state === 'unreachable') {
       console.log(`  ${ref}: not checked — could not reach the API`)
+      continue
     }
+
+    // A composite or JavaScript action declares itself as action.yml (or the
+    // older .yaml). Docker actions use Dockerfile, which is rare enough that
+    // missing it is worth a look rather than a silent pass.
+    const prefix = subdir === '' ? '' : `${subdir}/`
+    const found = ['action.yml', 'action.yaml', 'Dockerfile']
+      .map((name) => fileExists(repo, `${prefix}${name}`, version))
+    if (found.includes('ok')) continue
+    if (found.includes('unreachable')) {
+      console.log(`  ${ref}: not checked — could not reach the API`)
+      continue
+    }
+    problems.push(`${ref}: no action.yml at ${subdir === '' ? 'the repository root' : subdir}`)
   }
 }
 

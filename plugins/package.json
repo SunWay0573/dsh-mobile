@@ -1,12 +1,9 @@
 {
   "name": "dsh-mobile-plugins",
   "private": true,
-  "type": "module",
+  "packageManager": "pnpm@11.19.0",
   "description": "DSH host plugins for dsh-mobile",
-  "license": "MIT",
-  "engines": {
-    "node": ">=22.18"
-  },
+  "type": "module",
   "scripts": {
     "typecheck": "tsc -b --pretty",
     "test": "node --test --experimental-strip-types \"*/test/**/*.test.ts\"",
@@ -15,5 +12,9 @@
   "devDependencies": {
     "@types/node": "^22.10.0",
     "typescript": "^5.7.0"
+  },
+  "license": "MIT",
+  "engines": {
+    "node": ">=22.18"
   }
 }

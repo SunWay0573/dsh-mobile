@@ -31,7 +31,17 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      # No `version:` here on purpose: the action can only omit it when a
+      # package.json declares `packageManager`, and this repository has no root
+      # package.json. It reads the plugins one instead, so the version is
+      # reviewable in the repository rather than buried in the workflow.
+      #
+      # Omitting both is not a soft failure. The action's own README: "The
+      # `version` input can be omitted only when `packageManager` ... declares
+      # pnpm v11 or newer". Without either, the job fails on its second step.
       - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: plugins/package.json
       - uses: actions/setup-node@v4
         with:
           node-version: 22
