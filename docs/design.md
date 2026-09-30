@@ -325,13 +325,46 @@ which path will be used. The wrong choice fails silently.
 
 ## 10. The phone interface
 
-The desktop UI is three columns with minimum widths of 264, 400 and 300 pixels.
-That does not fit a phone, and the initial plan was to adapt it.
+**The layout adapts, and an earlier version of this document said it did not.**
 
-What was actually done was smaller: build the native shell and reuse the web
-client for the conversation, then fix the layout only where it breaks. A mobile
-layout pass is a separate, later piece of work with a clear scope, rather than
-something entangled with getting the thing to run at all.
+The columns have minimum widths — 264, 400 and 300 pixels — and reading only
+those constants suggests three columns totalling 964 pixels cannot fit a phone.
+It is wrong, and it was wrong because the constants were read without checking
+how they are used. The actual solver is:
+
+```ts
+const available = viewport - sidebar - CENTER_MIN
+const rightbar = rightbar === 0 || available < RIGHTBAR_MIN ? 0 : …
+return { sidebar, center: max(0, viewport - sidebar - rightbar), rightbar }
+```
+
+Below 1024 pixels the sidebar collapses to a 56-pixel rail, and the right bar
+**collapses to zero** when there is not room for a 400-pixel centre. Resolved at
+real widths:
+
+| Viewport | Rail | Centre | Right bar |
+|---|---|---|---|
+| 1680 | 280 | 1020 | 380 |
+| 768 | 56 | 400 | 312 |
+| 390 (a typical phone) | 56 | **334** | 0 |
+| 320 | 56 | 264 | 0 |
+
+So a phone gets a two-column layout — a sliver rail and the conversation — and it
+works. Nothing was broken.
+
+This is recorded rather than quietly deleted because the mistake is instructive:
+a design document that asserts a constraint from reading constants, without
+checking the code that consumes them, is how a project ends up building a
+solution to a problem it does not have.
+
+What *is* genuinely unadapted is smaller and was not verified on a device:
+affordances that assume hover (`@media (hover: hover)` guards some of them, not
+all), and a 56-pixel rail that is a desktop-shaped control on a touch screen. The
+app sets `windowSoftInputMode="adjustResize"` so the keyboard pushes content
+rather than covering it, and it does **not** request `viewport-fit=cover` — which
+means the platform insets the viewport and no safe-area handling is needed. Both
+statements are from the configuration, not from a phone, and that is the honest
+status of every claim in this section.
 
 Two UI decisions worth recording:
 
