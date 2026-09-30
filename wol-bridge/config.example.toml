@@ -1,0 +1,67 @@
+# wol-bridge deployment config -- an example, meant to be copied.
+#
+#   cp config.example.toml wol-bridge.local.toml
+#
+# The local name matters: .gitignore excludes `wol-*.local.*`, so
+# wol-bridge.local.toml stays out of git while this example file is tracked.
+#
+# Then load it explicitly. There is no implicit discovery on purpose -- a
+# service that silently picks up a file from its working directory is a
+# surprise waiting to happen under systemd:
+#
+#   python3 server.py --config wol-bridge.local.toml
+#
+# Precedence, highest first: command-line flag, WOL_BRIDGE_* environment
+# variable, this file, built-in default. A flag therefore always beats a key
+# written here, which is what makes `--listen 0.0.0.0` a deliberate act.
+#
+# Every key is optional except mac and broadcast.
+
+# The MAC of the machine to wake. This must be the address the interface is
+# *actually using*, not the hardware address -- see "the MAC address trap" in
+# README.md. Modern Wi-Fi rotates private addresses, and a magic packet for the
+# wrong MAC fails silently: everything looks configured correctly and nothing
+# ever wakes.
+mac = "aa:bb:cc:dd:ee:ff"
+
+# One or more broadcast addresses. It is a list because the machine may be
+# reachable on more than one subnet; every entry is tried, and one failure does
+# not stop the others. Use the broadcast address of the target's subnet, or
+# 255.255.255.255 if you have a single flat network. Literal IPv4 addresses
+# only -- a hostname here is refused at startup rather than failing at 2am.
+broadcast = ["192.168.10.255"]
+
+# UDP port for the magic packet. 9 is the convention. A minority of NICs and
+# BIOSes only listen on 7 (or 0), which is the first thing to try if the packet
+# is definitely being sent and nothing wakes.
+port = 9
+
+# Datagrams per target. Magic packets are unacknowledged UDP; the repeat costs
+# nothing and covers the case where the NIC is in a deep power state or the
+# switch dropped the first frame.
+repeat = 3
+
+# Where the HTTP endpoint listens.
+#
+# 127.0.0.1 is the default and is almost always right: the intended deployment
+# puts this behind the same tunnel as the DSH host, so the tunnel -- not the
+# bind address -- is what makes it reachable from the phone. Set it to
+# "0.0.0.0" only when something else (a firewall, a tunnel ACL) is doing the
+# filtering. Either way the log says loudly what is exposed.
+listen = "127.0.0.1"
+
+# Port the HTTP endpoint listens on.
+http_port = 8787
+
+# Shared secret. When set, POST /wake requires
+#   Authorization: Bearer <secret>
+# When unset, the endpoint runs open and logs a prominent warning at startup;
+# the blast radius is "anyone who can reach the port can wake your computer",
+# which is small but not nothing.
+#
+# Prefer the environment for this one, so the value does not travel inside a
+# config file you might copy to another machine:
+#
+#   export WOL_BRIDGE_SECRET='...'
+#
+# secret = "generate-one-with-python3--c-import-secrets-print-secrets-token-hex-32"
