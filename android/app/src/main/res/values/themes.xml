@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Compose draws everything, so this theme only governs the window background
+  before the first frame and the system bars.
+
+  It inherits from the platform theme rather than Material Components: the app
+  does not depend on com.google.android.material, and adding a dependency
+  purely to name a theme would be a poor trade.
+-->
+<resources>
+    <style name="Theme.DshMobile" parent="android:Theme.Material.Light.NoActionBar" />
+</resources>

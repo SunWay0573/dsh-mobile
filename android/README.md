@@ -12,42 +12,103 @@ prompts and composer stay identical to the desktop, and keep working when DSH
 updates. A native reimplementation would be a permanent maintenance tax chasing
 someone else's UI.
 
-**Why native for everything else.** Things a WebView cannot do well, or at all:
+**Why native for everything else.**
 
 | Feature | Why native |
 |---|---|
-| Session list & connection state | Needs to render before the tunnel is up |
-| Wake-on-LAN sender | UDP broadcast; not available to page JS |
-| Push notifications | FCM, and reliable delivery when the app is backgrounded |
-| Biometric unlock | The app is the key to your computer |
-| Reconnect after process death | Android kills backgrounded processes; the shell owns recovery |
+| Host address & settings | Must work before any page loads |
+| Wake-on-LAN sender | UDP broadcast; not available to page JavaScript |
+| Back navigation | Has to reconcile WebView history with the system back gesture |
+| Session list, push, biometrics | Planned; all need the shell, not the page |
 
 ## Screens
 
-- **Sessions** — the entry point. Cards with a running/needs-attention badge.
-  This is the highest-frequency screen by far, so it is native and fast.
-- **Conversation** — the WebView, scoped to one session.
-- **Wake** — shown when the host is unreachable; sends the magic packet and
-  polls until it comes up, then jumps into sessions.
-- **Settings** — host URL, wake bridge URL, notification topic, biometric lock.
+Two, in one activity, with no navigation library — a graph would add a
+dependency and a second place for back handling to go wrong.
 
-## Connectivity notes
+- **Home** — host address, wake configuration, and the wake button.
+- **Session** — the WebView, scoped to the host.
 
-The DSH web client derives its WebSocket URL from `location.origin` and has its
-own reconnect policy (500 ms → 10 s backoff, 15 s readiness deadline). The shell
-should not duplicate that — let the web client own its transport, and have the
-shell own *process-level* recovery: reload the WebView when the app returns to
-the foreground after being killed, and surface a clear banner rather than a
-white screen when the tunnel is down.
+Back is handled in exactly one place, so precedence never depends on composition
+order: walk the WebView's history first, and only leave the screen when there is
+nowhere back to go.
 
-Prefer HTTPS for the host origin — `tailscale serve` provides a real certificate
-for your tailnet name. Cleartext works but requires an explicit network security
-config, and the app holds credentials worth protecting.
+## Layout
 
-## Status
+```
+app/src/main/java/io/github/sunway0573/dshmobile/
+├── MainActivity.kt   Compose UI, both screens, back handling
+├── AppSettings.kt    SharedPreferences: host, MAC, broadcast
+├── WakeOnLan.kt      packet construction and the datagram send
+└── Urls.kt           address normalisation, Android-free so it is unit testable
+```
 
-🚧 Not implemented yet. Tracking issue: TBD.
+`SharedPreferences` rather than DataStore: there are three values, they are read
+once, and a synchronous read is what the UI wants.
 
-Toolchain: Kotlin, Jetpack Compose, Gradle (Kotlin DSL). The release workflow
-builds a debug APK on every push and attaches a signed release APK to tagged
-releases.
+## Version choices
+
+| Component | Version | Why |
+|---|---|---|
+| Gradle | 8.9 | Required floor for AGP 8.7 |
+| AGP | 8.7.3 | Current stable at time of writing |
+| Kotlin | 2.0.21 | Compose compiler plugin must match exactly |
+| Compose BOM | 2024.10.01 | Pins all Compose artifacts consistently |
+| compileSdk / targetSdk | 35 | |
+| minSdk | 26 | Vector launcher icon and modern WebView without compat shims |
+
+Kotlin 2.x moved the Compose compiler into its own Gradle plugin
+(`org.jetbrains.kotlin.plugin.compose`), and **it must match the Kotlin version
+exactly**. Mismatching them is the most common way a fresh Compose project fails
+to configure, which is why both come from a single `kotlin` version in the
+catalog.
+
+## Cleartext HTTP
+
+`network_security_config.xml` refuses cleartext everywhere except loopback.
+
+The wish — "allow cleartext on private ranges like `192.168.0.0/16`" — **cannot
+be expressed**: `<domain>` entries are hostnames or literal IPs, never CIDR
+blocks. Rather than work around that by permitting cleartext globally, this
+takes the posture the project actually recommends: reach the host over HTTPS
+(`tailscale serve` issues a real certificate for your tailnet name). Loopback
+stays open only because `adb reverse` needs it during development.
+
+To reach a plain-HTTP host on your LAN, add that exact address as a `<domain>`.
+Do not set `cleartextTrafficPermitted="true"` on `<base-config>` — this app
+holds a session cookie for a machine that can run arbitrary code.
+
+## Building
+
+```sh
+cd android
+./gradlew assembleDebug     # APK at app/build/outputs/apk/debug/
+./gradlew test              # JVM unit tests
+```
+
+The Gradle wrapper is complete and checked in. `gradle-wrapper.jar` is the
+official file from the Gradle 8.9.0 tag, SHA-256:
+
+```
+498495120a03b9a6ab5d155f5de3c8f0d986a449153702fb80fc80e134484f17
+```
+
+The wrapper jar is a binary that conventionally gets committed; verifying the
+hash is how you check it has not been swapped.
+
+**Nothing here has been compiled yet.** There is no Android SDK on the machine
+this was written on, so GitHub Actions is the first real compile. Expect the
+first run to be where any remaining API mismatch surfaces.
+
+## Not implemented yet
+
+- Session list on the home screen (currently the WebView is the only entry)
+- Push notification handling
+- Biometric unlock
+- Foreground-service reconnect after the OS kills the process
+
+Reconnect is worth a note: the DSH web client already owns its own transport
+recovery (500 ms → 10 s backoff, 15 s readiness deadline), so the shell should
+not duplicate it. What the shell owes is *process-level* recovery — reload the
+WebView when the app returns to the foreground after being killed, and show a
+clear banner rather than a white screen when the tunnel is down.

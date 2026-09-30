@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Cleartext HTTP is refused everywhere except loopback.
+
+  The obvious wish — "allow cleartext on private ranges, like 192.168.0.0/16" —
+  cannot be expressed here: <domain> entries are hostnames or literal IP
+  addresses, never CIDR blocks. Rather than work around that by permitting
+  cleartext globally, this takes the posture the project actually recommends:
+  reach the host over HTTPS (tailscale serve issues a real certificate for your
+  tailnet name), and keep loopback open only because `adb reverse` during
+  development needs it.
+
+  If you must reach a plain-HTTP host on your LAN, add that exact address as a
+  <domain> below and nothing more. Do not set cleartextTrafficPermitted="true"
+  on <base-config>: this app holds a session cookie for a machine that can run
+  arbitrary code.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">127.0.0.1</domain>
+        <domain includeSubdomains="false">localhost</domain>
+    </domain-config>
+</network-security-config>
