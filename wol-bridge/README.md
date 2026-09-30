@@ -80,26 +80,21 @@ only if something else is filtering (see [SECURITY.md](../SECURITY.md)).
 
 ### As a systemd service
 
-```ini
-[Unit]
-Description=wol-bridge (Wake-on-LAN sender for dsh-mobile)
-After=network-online.target
-Wants=network-online.target
-
-[Service]
-Type=exec
-WorkingDirectory=/home/pi/wol-bridge
-Environment=WOL_BRIDGE_SECRET=<paste a long random string>
-ExecStart=/usr/bin/python3 /home/pi/wol-bridge/server.py --config wol-bridge.local.toml
-Restart=on-failure
-NoNewPrivileges=yes
-PrivateTmp=yes
-ProtectSystem=strict
-ProtectHome=read-only
-
-[Install]
-WantedBy=multi-user.target
+```sh
+sudo cp wol-bridge/wol-bridge.service /etc/systemd/system/
+sudo "$EDITOR" /etc/systemd/system/wol-bridge.service   # the three paths, and the secret
+sudo systemctl daemon-reload
+sudo systemctl enable --now wol-bridge
+systemctl status wol-bridge
 ```
+
+The unit is a real file — [`wol-bridge.service`](wol-bridge.service) — rather than
+prose to retype, because a unit file copied out of a README is a unit file with a
+typo in it.
+
+> **It has never been started.** systemd does not run on the machine this was
+> written on. `systemd-analyze verify wol-bridge.service` is the check to run,
+> and on the target machine rather than a development one.
 
 ## HTTP API
 

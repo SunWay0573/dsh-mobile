@@ -1,0 +1,56 @@
+# wol-bridge as a systemd service.
+#
+# This was documented as prose in the README first, which is how a unit file gets
+# a typo nobody notices until the service refuses to start on a machine someone
+# has to walk over to. It is a file so it can be copied, diffed and linted.
+#
+# Install as root:
+#
+#   cp wol-bridge/wol-bridge.service /etc/systemd/system/
+#   $EDITOR /etc/systemd/system/wol-bridge.service   # the three paths below
+#   systemctl daemon-reload
+#   systemctl enable --now wol-bridge
+#   systemctl status wol-bridge
+#
+# NOT VERIFIED BY THIS PROJECT. systemd does not run on the machine this was
+# written on, so the unit has never been started. `systemd-analyze verify
+# wol-bridge.service` is the check to run before trusting it, and it is worth
+# running on the target machine rather than the development one.
+
+[Unit]
+Description=wol-bridge (Wake-on-LAN sender for dsh-mobile)
+Documentation=https://github.com/SunWay0573/dsh-mobile/tree/main/wol-bridge
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+# `exec` rather than `simple`: systemd waits for the real binary, so a syntax
+# error in server.py is a failed unit rather than a service that looks active
+# and answers nothing. Type=simple would report success for a process that died
+# on import.
+Type=exec
+
+# ── Edit these three ────────────────────────────────────────────────────────
+WorkingDirectory=/home/pi/wol-bridge
+ExecStart=/usr/bin/python3 /home/pi/wol-bridge/server.py --config wol-bridge.local.toml
+# The shared secret. Do not commit the filled-in unit anywhere; keep it in
+# /etc/systemd/system/ and set permissions 0600 if you would rather it not be
+# world-readable, which is the default for unit files.
+Environment=WOL_BRIDGE_SECRET=CHANGE_ME
+
+Restart=on-failure
+RestartSec=5
+
+# ── Hardening ───────────────────────────────────────────────────────────────
+# This service sends UDP broadcasts and nothing else. It has no reason to write
+# to the filesystem, to see other users' homes, or to gain privileges.
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=read-only
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+
+[Install]
+WantedBy=multi-user.target
