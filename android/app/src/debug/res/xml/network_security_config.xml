@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Debug builds only. This file overrides the main one for the debug variant via
+  resource merging, so assembleDebug permits cleartext and assembleRelease does
+  not.
+
+  Why this exists: the main config refuses cleartext except on loopback, because
+  Android's domain element accepts hostnames and literal IPs but not CIDR
+  blocks. "Allow cleartext on 192.168.0.0/16" therefore cannot be expressed, and
+  the strict posture is the only honest one for a release build.
+
+  That makes testing against a plain HTTP host on your LAN impossible without
+  editing the config. Rather than weaken the shipped app, the relaxation is
+  scoped to the build type that never reaches a user.
+
+  Do not copy this into src/main.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+            <certificates src="user" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

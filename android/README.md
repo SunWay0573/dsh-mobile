@@ -78,6 +78,23 @@ To reach a plain-HTTP host on your LAN, add that exact address as a `<domain>`.
 Do not set `cleartextTrafficPermitted="true"` on `<base-config>` — this app
 holds a session cookie for a machine that can run arbitrary code.
 
+**For development, you do not have to edit anything.**
+`app/src/debug/res/xml/network_security_config.xml` overrides the main config for
+the debug variant only, so `assembleDebug` permits cleartext and
+`assembleRelease` does not. Resource merging handles it; the relaxation is
+scoped to a build type that never reaches a user.
+
+Verified by reading the packaged resources back out of each variant:
+
+```
+[debug  ] base-config cleartext=true
+[release] base-config cleartext=false   cleartext exceptions: 127.0.0.1, localhost
+```
+
+`scripts/verify.sh` asserts the release value from source, because copying the
+debug config into `src/main` is the obvious way to "fix" a LAN connection that
+will not load, and the consequence is an app that will talk plaintext anywhere.
+
 ## Building
 
 ```sh

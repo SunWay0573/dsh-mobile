@@ -156,6 +156,23 @@ if selected android; then
     export ANDROID_HOME="$ANDROID_SDK"
     # local.properties is gitignored; both CI and a fresh clone need it written.
     [[ -f android/local.properties ]] || echo "sdk.dir=$ANDROID_SDK" > android/local.properties
+
+    # The release variant must not permit cleartext. It is one line to get wrong
+    # -- copying the debug config into src/main is the obvious way to "fix" a
+    # LAN connection failing -- and the consequence is shipping an app that will
+    # happily talk plaintext to anywhere. Checked from source so it costs
+    # nothing and does not need a release build.
+    if python3 - <<'CHECK'
+import sys, xml.etree.ElementTree as ET
+path = 'android/app/src/main/res/xml/network_security_config.xml'
+base = ET.parse(path).getroot().find('base-config')
+sys.exit(0 if base is not None and base.get('cleartextTrafficPermitted') == 'false' else 1)
+CHECK
+    then
+      ok "release refuses cleartext by default"
+    else
+      bad "release refuses cleartext by default"
+    fi
     run "unit tests" bash -c 'cd android && ./gradlew testDebugUnitTest --no-daemon --quiet'
     run "assemble debug APK" bash -c 'cd android && ./gradlew assembleDebug --no-daemon --quiet'
     if compgen -G "android/app/build/outputs/apk/debug/*.apk" >/dev/null; then
