@@ -1,5 +1,7 @@
 # dsh-mobile
 
+**English** | [中文](README.zh.md)
+
 **Control your home machine's [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) agent from your phone.**
 
 An Android app + a set of DSH host plugins that turn a desktop running DSH into a
@@ -36,10 +38,9 @@ But four things are missing for real remote use, and this project supplies them:
 ```
 ┌──────────────────────────────────────────────┐
 │  Android app (Kotlin + Compose)               │
-│  · Native shell: sessions, settings, wake     │
+│  · Native shell: settings, wake, biometric    │
 │  · WebView: the conversation UI               │
 │    (literally DSH's own web client)           │
-│  · FCM push · WoL sender · biometric lock     │
 └───────────────┬──────────────────────────────┘
                 │ WireGuard tunnel / frp
                 ▼
@@ -80,13 +81,23 @@ copy of the data.
 
 Native Kotlin + Jetpack Compose shell around a WebView.
 
-The shell owns everything that benefits from being native: session list,
-connection state, wake button, settings, biometric unlock, push handling.
+**The WebView owns everything that comes from the host. Native owns what the
+host cannot do.**
 
-The conversation view is **DSH's own web client** loaded from your host. That is
-deliberate: the transcript, tool-call cards, approval prompts and composer stay
-pixel-identical to the desktop, and they keep working when DSH updates — with no
-reimplementation to maintain.
+The conversation view is **DSH's own web client** loaded from your host, and the
+native shell handles only what a page cannot: remembering the host address,
+sending a magic packet, gating access behind a biometric, and reconnecting after
+the OS kills the process.
+
+Reusing the web client is deliberate. The transcript, tool-call cards, approval
+prompts and composer stay identical to the desktop, and they keep working when
+DSH updates — with no reimplementation to maintain.
+
+A **native session list was in the original plan and was withdrawn.** Rendering
+it natively means reimplementing DSH's RPC envelope *and* its one-time-token-to-cookie
+exchange, to draw a screen the web client already draws correctly — a second
+implementation of the authentication path, hand-synced to someone else's
+protocol. The sidebar in the loaded client is the session list.
 
 ### `plugins/sleep-guard/` — sleep that follows the work
 
@@ -104,9 +115,20 @@ DSH already emits exactly the events needed — `agent/status` (`idle ⇄ runnin
 
 ```ts
 const busy = () =>
-  ctx.agents.roots().some(a => a.status === 'running') ||
-  ctx.jobs.list().some(j => j.status === 'running')
+  ctx.agents.list().some(a => a.status === 'running') ||
+  collectJobs(ctx).some(j => j.status === 'running' || j.status === 'stopping')
 ```
+
+Three details here are easy to get wrong, and all three are handled:
+
+- **`status === 'idle'` does not mean nothing is happening.** An idle agent has
+  no *driver* scheduled; a background `bash` job outlives the turn that started
+  it. Checking only agents produces a machine that sleeps in the middle of a
+  build.
+- **`ctx.jobs.list()` with no argument returns only unowned jobs.** It has to be
+  unioned with `list(sessionId)` for every live agent, subagents included, or
+  every ordinary background job is invisible.
+- **`'stopping'` still occupies the machine.** The work has not finished.
 
 When `busy()` flips true we spawn `caffeinate -i`; when it flips false we kill it.
 Using a child process rather than a native assertion API is intentional: the
@@ -132,8 +154,9 @@ can never leave the machine permanently unable to sleep.
 Wake-on-LAN packets are broadcast and **do not cross routers**, so waking from
 outside the house requires *something already awake on the same subnet*.
 
-This is a ~40-line script for a Raspberry Pi, NAS, or any always-on machine on
-your LAN, plus a tiny HTTP endpoint your phone can reach over the tunnel.
+This is a dependency-free Python service for a Raspberry Pi, NAS, or any
+always-on machine on your LAN, plus a small HTTP endpoint your phone can reach
+over the tunnel.
 
 If you would rather not run anything extra, check whether your router has a
 built-in Wake-on-LAN feature first — many do.
@@ -211,9 +234,9 @@ else can:
 
 ## Status
 
-Early. The design is settled and grounded in a hands-on audit of the DSH source
-and of a shipping commercial remote-desktop tool; the implementation is being
-built in the open.
+Early, but complete enough to run. The design is settled and grounded in a
+hands-on audit of the DSH source and of a shipping commercial remote-desktop
+tool; everything in the table below is implemented, tested and pushed.
 
 | Component | State | Tests |
 |---|---|---|
