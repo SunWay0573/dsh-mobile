@@ -10,6 +10,7 @@ pieces listed under [Good first issues](#good-first-issues).
 scripts/verify.sh            # everything available on this machine
 scripts/verify.sh --strict   # what CI runs; missing toolchains are failures
 scripts/verify.sh --only=plugins
+scripts/verify.sh --without-integration   # skip the slow host boot
 ```
 
 This is the same script CI calls, so a local pass means a CI pass. It degrades to
@@ -19,6 +20,12 @@ nothing looks exactly like a pass.
 
 The Android section needs a JDK and an Android SDK. Without them it skips, and
 you can still verify everything else.
+
+The integration section boots a real DSH host with the plugins installed. It
+downloads the DSH CLI on first run (~200 MB, cached afterwards) and takes a
+couple of minutes. Do not skip it habitually: it is the only check that can see
+a plugin which installs, typechecks, passes every unit test, and never runs.
+That has happened here three times.
 
 ## Before you start
 

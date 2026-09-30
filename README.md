@@ -175,9 +175,15 @@ See [`docs/setup-power.md`](docs/setup-power.md).
 **Verify any of it** with the script CI itself calls:
 
 ```sh
-scripts/verify.sh            # 12 checks; skips what this machine cannot do
-scripts/verify.sh --strict   # what CI runs
+scripts/verify.sh            # everything, including a real host boot
+scripts/verify.sh --strict   # what CI runs; missing toolchains are failures
+scripts/verify.sh --without-integration   # skip the slow one
 ```
+
+The integration check is the interesting one. It installs both plugins into an
+isolated `DSH_HOME`, boots a real DSH host, and asserts that they load — because
+three bugs shipped here that installed cleanly, typechecked, passed every unit
+test, and never ran. Nothing else in the repository can see that.
 
 ---
 
@@ -196,10 +202,12 @@ built in the open.
 | Android app | ✅ builds; APK + 30 unit tests verified locally | 30 |
 | CI | ⏸ workflow ready on a branch, blocked on a GitHub token scope | — |
 
-217 tests total, plus integration verification against a real DSH host: both
-plugins were installed into an isolated profile and booted, which is how three
-silent-non-load bugs were found that no typecheck or unit test could see (see
-[`scripts/check-plugins.mjs`](scripts/check-plugins.mjs)).
+217 tests total, plus integration verification against a real DSH host. Both
+plugins are installed into an isolated `DSH_HOME` and booted on every
+`scripts/verify.sh` run, which is how three silent-non-load bugs were found that
+no typecheck or unit test could see. Both are now checked automatically:
+[`scripts/check-plugins.mjs`](scripts/check-plugins.mjs) from source, and
+[`scripts/verify-integration.sh`](scripts/verify-integration.sh) by doing it.
 
 The Android app has been built against a real SDK —
 `BUILD SUCCESSFUL`, a 9.5 MB debug APK, and its 21 unit tests passing — so it is
