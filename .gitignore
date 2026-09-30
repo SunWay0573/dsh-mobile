@@ -1,0 +1,64 @@
+# ── Secrets and machine-local config ─────────────────────────────────────────
+# Never commit these. See SECURITY.md.
+.credentials.yaml
+*.credentials.yaml
+.env
+.env.*
+!.env.example
+secrets/
+*.pem
+*.key
+*.p12
+*.jks
+keystore.properties
+local.properties
+
+# Tunnel / host config that encodes your private topology
+frpc.toml
+frpc.ini
+tailscale-*.json
+wol-*.local.*
+!wol-bridge/config.example.toml
+
+# ── Android ──────────────────────────────────────────────────────────────────
+*.apk
+*.aab
+*.ap_
+*.dex
+android/app/release/
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+android/.idea/
+android/captures/
+.cxx/
+
+# ── Node / DSH plugins ───────────────────────────────────────────────────────
+node_modules/
+dist/
+lib/
+*.tsbuildinfo
+.pnpm-store/
+plugins/*/lib/
+plugins/*/dist/
+
+# ── Python (wol-bridge) ──────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+
+# ── Editors / OS ─────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+*.swp
+*~
+.vscode/
+.idea/
+!.vscode/extensions.json
+
+# ── Logs ─────────────────────────────────────────────────────────────────────
+*.log
+logs/
