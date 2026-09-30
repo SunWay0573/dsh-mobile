@@ -266,6 +266,23 @@ fi
 # did, from a keep-awake agent installed months earlier -- and an absolute count
 # would report "held" before the host even started and "leaked" forever after.
 # The baseline is sampled below, before anything is installed.
+# Whether the platform's sleep-inhibition mechanism is actually usable here.
+#
+# The distinction matters more than it looks. `systemd-inhibit` is installed on
+# many systems where it does not work -- a container has the binary and no
+# systemd session, and `--list` fails. Treating that as "zero assertions held"
+# would turn a CI runner's environment into a failing test, and a check that
+# fails for environmental reasons is a check people learn to ignore.
+assertion_mechanism_works() {
+  if [[ "$(uname -s)" == "Darwin" ]]; then
+    pmset -g assertions >/dev/null 2>&1
+  elif command -v systemd-inhibit >/dev/null 2>&1; then
+    systemd-inhibit --list >/dev/null 2>&1
+  else
+    return 1
+  fi
+}
+
 assertion_count() {
   if [[ "$(uname -s)" == "Darwin" ]]; then
     # One line per assertion. Matching loosely would also catch the
@@ -278,9 +295,10 @@ assertion_count() {
   fi
 }
 
-mechanism="$(assertion_count)"
-if [[ "$mechanism" == "unsupported" ]]; then
-  info "skipping the assertion check: nothing to observe on $(uname -s)"
+if ! assertion_mechanism_works; then
+  info "skipping the assertion check: no working sleep-inhibition mechanism on $(uname -s)"
+  info "(systemd-inhibit is installed almost everywhere but only works inside a"
+  info " systemd session; a container has the binary and no session)"
 else
   # Wait for the fixture to announce it took a job.
   for _ in $(seq 1 40); do
