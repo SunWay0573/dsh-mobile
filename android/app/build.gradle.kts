@@ -44,6 +44,7 @@ android {
 dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
+    implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.androidx.activity.compose)
 
     implementation(platform(libs.androidx.compose.bom))
@@ -58,6 +59,11 @@ dependencies {
     // maintain. AndroidX WebKit is not used for that; it is here for
     // WebViewCompat feature detection.
     implementation(libs.androidx.webkit)
+
+    // The app holds a session cookie for a machine that can run arbitrary code.
+    // A screen lock on the phone is the last line of defence if the phone is
+    // handed to someone unlocked.
+    implementation(libs.androidx.biometric)
 
     debugImplementation(libs.androidx.ui.tooling)
 

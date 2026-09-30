@@ -29,6 +29,17 @@ class AppSettings(context: Context) {
         get() = prefs.getString(KEY_WAKE_BROADCAST, "") ?: ""
         set(value) = prefs.edit().putString(KEY_WAKE_BROADCAST, value.trim()).apply()
 
+    /**
+     * Require a biometric before showing anything.
+     *
+     * Off by default: a lock the user did not ask for is a lock they will
+     * disable, and this app is useless if it is annoying. The settings screen
+     * explains what it protects.
+     */
+    var lockWithBiometric: Boolean
+        get() = prefs.getBoolean(KEY_BIOMETRIC, false)
+        set(value) = prefs.edit().putBoolean(KEY_BIOMETRIC, value).apply()
+
     /** Whether enough is configured to attempt a wake. */
     val canWake: Boolean
         get() = wakeMac.isNotBlank() && wakeBroadcast.isNotBlank()
@@ -42,5 +53,6 @@ class AppSettings(context: Context) {
         const val KEY_HOST_URL = "host_url"
         const val KEY_WAKE_MAC = "wake_mac"
         const val KEY_WAKE_BROADCAST = "wake_broadcast"
+        const val KEY_BIOMETRIC = "lock_with_biometric"
     }
 }

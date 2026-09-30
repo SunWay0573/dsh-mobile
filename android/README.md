@@ -37,13 +37,19 @@ nowhere back to go.
 
 ```
 app/src/main/java/io/github/sunway0573/dshmobile/
-├── MainActivity.kt   Compose UI, both screens, back handling
-├── AppSettings.kt    SharedPreferences: host, MAC, broadcast
+├── MainActivity.kt   Compose UI, both screens, back handling, web state
+├── AppSettings.kt    SharedPreferences: host, MAC, broadcast, lock
+├── Biometric.kt      the lock gate
 ├── WakeOnLan.kt      packet construction and the datagram send
-└── Urls.kt           address normalisation, Android-free so it is unit testable
+├── Urls.kt           address normalisation          ┐ Android-free, so
+└── WebState.kt       failure classification         ┘ unit testable
 ```
 
-`SharedPreferences` rather than DataStore: there are three values, they are read
+The two files with no Android imports are the two with judgement in them:
+address handling and failure text. Everything that needs a device is in the
+other four.
+
+`SharedPreferences` rather than DataStore: there are four values, they are read
 once, and a synchronous read is what the UI wants.
 
 ## Version choices
@@ -158,15 +164,80 @@ things that were needed here, neither of which should be committed:
 A single `Remote host terminated the handshake` failure is usually transient
 rather than a real block — retry before concluding anything.
 
-## Not implemented yet
+## What the shell owns, and what it does not
 
-- Session list on the home screen (currently the WebView is the only entry)
-- Push notification handling
-- Biometric unlock
-- Foreground-service reconnect after the OS kills the process
+The principle: **the WebView owns everything that comes from the host; native
+owns what the host cannot do.** Two entries on the original plan violated it, and
+one of them is now withdrawn.
 
-Reconnect is worth a note: the DSH web client already owns its own transport
-recovery (500 ms → 10 s backoff, 15 s readiness deadline), so the shell should
-not duplicate it. What the shell owes is *process-level* recovery — reload the
-WebView when the app returns to the foreground after being killed, and show a
-clear banner rather than a white screen when the tunnel is down.
+### Withdrawn: a native session list
+
+This was on the plan and should not have been. Rendering the session list
+natively means reimplementing DSH's RPC envelope *and* the one-time-token to
+cookie exchange, in order to draw a screen the web client already draws
+correctly. It would be a second implementation of the authentication path, kept
+in step with someone else's protocol by hand, in the part of this system where a
+mistake is most expensive.
+
+The sidebar in the loaded web client is the session list. If it is awkward to
+reach on a phone, the fix belongs in the mobile layout, not in a parallel Kotlin
+client.
+
+### Implemented: biometric lock
+
+Optional, off by default, explained in the settings card. It gates the whole UI
+behind `BiometricPrompt`.
+
+- `BIOMETRIC_WEAK`, not strong. A device with a weaker sensor is still far better
+  protected than one with no prompt, and demanding a strong sensor would lock
+  those users out of the protection entirely.
+- **No device-credential fallback.** It could be offered, but it is the same PIN
+  that unlocks the phone, so the gate would add nothing while appearing to. That
+  is worse than not offering it.
+- A cold start prompts immediately; a rotation does not, because the unlocked
+  state was never lost.
+
+This is why the activity is a `FragmentActivity`: `BiometricPrompt` requires one.
+
+### Implemented: failures that say what to do
+
+The most likely first-run failure is not a network problem. It is that DSH prints
+a one-time sign-in link on **every** start and the phone has to open it once. A
+user who just restarted their host otherwise gets a bare 401 page and no way
+forward.
+
+`WebErrors` (in `WebState.kt`, Android-free and unit tested) turns statuses into
+advice:
+
+| Status | What the banner says |
+|---|---|
+| 401, 403 | the host refused this device — open the sign-in link |
+| 404 | something answered, but not DSH — check the address |
+| 5xx | the host is running but errored; its logs will say why |
+| anything else | nothing; an unclear banner over a working page is worse than none |
+
+HTTP errors are reported for the **main frame only**. DSH streams plugin bundles
+and optional assets, and a banner raised because one of them 404s would sit on
+top of a page that is working perfectly.
+
+### Implemented: process-level recovery
+
+The web client owns its own transport recovery (500 ms → 10 s backoff, 15 s
+readiness deadline), so the shell must not duplicate it. What the shell owes is
+different: noticing that the page never loaded at all. That is a retry button,
+plus an automatic reload when the app returns to the foreground while failed — a
+tunnel that was down when you backgrounded the app is very often back by the
+time you return.
+
+Process death needs no special handling: the host URL lives in
+`SharedPreferences`, so a fresh process loads it.
+
+## Still not implemented
+
+- **Push notification handling.** Needs FCM, which needs a project the app is
+  registered with. That is a decision for whoever runs this, not something to
+  guess at.
+- **A foreground service** to survive aggressive background limits. MIUI is
+  known for killing backgrounded apps, and this app is meant for exactly that
+  audience, so it matters — but it also needs the FCM decision above to be worth
+  building.
