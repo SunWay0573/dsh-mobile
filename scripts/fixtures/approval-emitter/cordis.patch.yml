@@ -1,0 +1,12 @@
+# Test fixture layer.
+#
+# `name` must equal the package's own name exactly — the loader imports that
+# string verbatim.
+- insert:
+    - id: e2e-approval-emitter
+      name: 'dsh-e2e-approval-emitter'
+      config:
+        # After the host has settled, so the listener that is meant to receive
+        # this is definitely registered.
+        delayMs: 8000
+        sessionId: 'e2e-approval-session'

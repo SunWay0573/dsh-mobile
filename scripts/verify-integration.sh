@@ -46,6 +46,9 @@ info() { printf '  \033[2m%s\033[0m\n' "$1"; }
 FAILURES=0
 
 cleanup() {
+  if [[ -n "${SINK_PID:-}" ]] && kill -0 "$SINK_PID" 2>/dev/null; then
+    kill "$SINK_PID" 2>/dev/null || true
+  fi
   if [[ -n "$HOST_PID" ]] && kill -0 "$HOST_PID" 2>/dev/null; then
     kill "$HOST_PID" 2>/dev/null || true
     sleep 1
@@ -148,15 +151,58 @@ for name in "${PLUGINS[@]}"; do
   fi
 done
 
+# ── A webhook to deliver to ─────────────────────────────────────────────────
+# mobile-bridge posts notifications to a URL. To find out whether one is actually
+# delivered -- rather than trusting the plugin's own account of itself --
+# something has to be on the other end. This also exercises the configuration
+# path a real user takes, because the endpoint is set the same way they would
+# set it: an id-targeted config override in the profile patch layer.
+SINK_PORT="${DSH_E2E_SINK_PORT:-34998}"
+SINK_LOG="$SANDBOX/notifications.jsonl"
+node "$REPO_ROOT/scripts/fixtures/notify-sink.mjs" "$SINK_PORT" "$SINK_LOG" \
+  >"$SANDBOX/sink.log" 2>&1 &
+SINK_PID=$!
+
+for _ in $(seq 1 20); do
+  grep -q "notify-sink listening" "$SANDBOX/sink.log" 2>/dev/null && break
+  sleep 0.5
+done
+
+if grep -q "notify-sink listening" "$SANDBOX/sink.log" 2>/dev/null; then
+  pass "webhook sink listening on 127.0.0.1:$SINK_PORT"
+else
+  fail "webhook sink did not start"
+  sed 's/^/       /' "$SANDBOX/sink.log" | tail -5
+fi
+
+PROFILE_DIR="$DSH_HOME_DIR/profiles/web"
+mkdir -p "$PROFILE_DIR"
+cat > "$PROFILE_DIR/cordis.patch.yml" <<PATCH
+# Written by scripts/verify-integration.sh. This is the same id-targeted config
+# override a user would write, so the check exercises the real configuration
+# path rather than injecting state some other way.
+- id: mobile-bridge
+  name: dsh-mobile-bridge
+  config:
+    url: http://127.0.0.1:$SINK_PORT/notify
+    token: e2e-token
+    baseUrl: https://e2e.invalid
+    notifyOnApproval: true
+    notifyOnTurnEnd: false
+PATCH
+pass "mobile-bridge configured through the profile patch layer"
+
 # The job-holder fixture is installed alongside, so sleep-guard has something to
 # notice. See scripts/fixtures/README.md for why a fixture is needed at all.
-HOLDER="$REPO_ROOT/scripts/fixtures/job-holder"
-if [[ -d "$HOLDER" ]]; then
-  "$DSH" plugin --profile web add "$HOLDER" >/dev/null 2>&1
-  pass "job-holder fixture installed"
-else
-  fail "job-holder fixture missing at $HOLDER"
-fi
+for fixture in job-holder approval-emitter; do
+  fixture_dir="$REPO_ROOT/scripts/fixtures/$fixture"
+  if [[ -d "$fixture_dir" ]]; then
+    "$DSH" plugin --profile web add "$fixture_dir" >/dev/null 2>&1
+    pass "$fixture fixture installed"
+  else
+    fail "$fixture fixture missing at $fixture_dir"
+  fi
+done
 
 # ── 3. Both rows must appear in the composed tree ───────────────────────────
 # A package can be in the bundle list and still contribute nothing if its patch
@@ -286,6 +332,55 @@ else
     else
       fail "the fixture never released its job"
     fi
+  fi
+fi
+
+# ── 6. Does an approval actually reach the phone? ───────────────────────────
+# mobile-bridge's purpose is that a phone in a pocket finds out the agent is
+# blocked. The fixture raises the event; this checks that a real HTTP request
+# came out the other end, with the content a person could act on.
+for _ in $(seq 1 30); do
+  [[ -s "$SINK_LOG" ]] && break
+  sleep 1
+done
+
+if [[ ! -s "$SINK_LOG" ]]; then
+  fail "no notification was delivered to the webhook"
+  info "the fixture should have raised an approval/request about 8s after boot"
+  grep -E "approval-emitter" "$boot_log" 2>/dev/null | sed 's/^/       /' | tail -3
+else
+  pass "a notification reached the webhook"
+
+  # Content, not just arrival. A notification with an empty body or no tap
+  # target is delivered and useless.
+  delivered="$(head -1 "$SINK_LOG")"
+  body="$(printf '%s' "$delivered" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const j=JSON.parse(s);console.log(j.body)})')"
+  priority="$(printf '%s' "$delivered" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const j=JSON.parse(s);console.log(j.headers.priority ?? "")})')"
+  click="$(printf '%s' "$delivered" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const j=JSON.parse(s);console.log(j.headers.click ?? "")})')"
+  auth="$(printf '%s' "$delivered" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const j=JSON.parse(s);console.log(j.headers.authorization ?? "")})')"
+
+  if [[ "$body" == *"e2e fixture"* ]]; then
+    pass "the notification carries the asker's reason"
+  else
+    fail "unexpected notification body: $body"
+  fi
+
+  if [[ "$priority" == "urgent" ]]; then
+    pass "approval notifications are urgent, so a phone does not ignore them"
+  else
+    fail "expected priority urgent, got '${priority:-none}'"
+  fi
+
+  if [[ "$click" == *"e2e-approval-session"* ]]; then
+    pass "the notification deep-links back to the session"
+  else
+    fail "expected a deep link to the session, got '${click:-none}'"
+  fi
+
+  if [[ "$auth" == "Bearer e2e-token" ]]; then
+    pass "the configured bearer token was sent"
+  else
+    fail "expected the configured token, got '${auth:-none}'"
   fi
 fi
 

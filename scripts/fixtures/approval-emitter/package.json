@@ -1,0 +1,14 @@
+{
+  "name": "dsh-e2e-approval-emitter",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Test fixture: raises an approval request so mobile-bridge has something to notify about",
+  "type": "module",
+  "main": "index.js",
+  "license": "MIT",
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  }
+}
