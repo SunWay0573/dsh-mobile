@@ -96,13 +96,17 @@ function stubFetch(): { calls: Call[]; restore: () => void } {
   return { calls, restore: () => { globalThis.fetch = original } }
 }
 
-const baseConfig: PluginConfig = {
+// Built through the schema rather than written as a literal, so the defaults a
+// real host applies are the ones under test. A plain object would silently skip
+// `deepLinkScheme`, and the deep-link assertions below would then be checking a
+// path production never takes.
+const baseConfig: PluginConfig = Config({
   url: 'https://ntfy.sh/topic',
   baseUrl: 'https://host.ts.net',
   notifyOnApproval: true,
   notifyOnTurnEnd: true,
   rateLimitPerMinute: 20,
-}
+})
 
 /** Let queued microtasks (the fire-and-forget send) run. */
 const flush = (): Promise<void> => new Promise((resolve) => { setImmediate(resolve) })
@@ -160,7 +164,7 @@ describe('approval notifications', () => {
       assert.equal(stub.calls.length, 1)
       assert.equal(stub.calls[0]?.body, 'writes outside the workspace')
       assert.equal(stub.calls[0]?.headers['priority'], 'urgent')
-      assert.equal(stub.calls[0]?.headers['click'], 'https://host.ts.net/#/session/session-1')
+      assert.equal(stub.calls[0]?.headers['click'], 'dshmobile://session/session-1')
     } finally {
       stub.restore()
     }
@@ -261,7 +265,7 @@ describe('turn-end notifications', () => {
 
       assert.equal(stub.calls.length, 1)
       assert.equal(stub.calls[0]?.headers['priority'], 'default')
-      assert.equal(stub.calls[0]?.headers['click'], 'https://host.ts.net/#/session/s1')
+      assert.equal(stub.calls[0]?.headers['click'], 'dshmobile://session/s1')
     } finally {
       stub.restore()
     }
@@ -312,8 +316,33 @@ describe('turn-end notifications', () => {
       await flush()
 
       assert.equal(stub.calls.length, 1)
-      assert.equal(stub.calls[0]?.headers['click'], 'https://host.ts.net/#/session/a')
+      assert.equal(stub.calls[0]?.headers['click'], 'dshmobile://session/a')
       assert.equal(stub.calls[0]?.headers['click']?.includes('/b'), false)
+    } finally {
+      stub.restore()
+    }
+  })
+
+  // The default matters: a HTTPS link opens a browser, and the sign-in cookie
+  // lives in the app's WebView, so that tap lands on an unauthenticated page.
+  test('links a tap to the app scheme by default', () => {
+    const h = fakeContext()
+    apply(h.ctx, baseConfig)
+    assert.equal(baseConfig.deepLinkScheme, 'dshmobile')
+  })
+
+  test('falls back to the https form when the scheme is cleared', async () => {
+    const stub = stubFetch()
+    try {
+      const h = fakeContext()
+      apply(h.ctx, Config({ ...baseConfig, deepLinkScheme: '' }))
+      // One agent object, reused: the turn-end watch keys on the agent, so two
+      // calls to agent('s1') would be two different agents and no edge.
+      const watcher = agent('s1')
+      h.emit('agent/status', { agent: watcher, status: 'running' })
+      h.emit('agent/status', { agent: watcher, status: 'idle' })
+      await flush()
+      assert.equal(stub.calls[0]?.headers['click'], 'https://host.ts.net/#/session/s1')
     } finally {
       stub.restore()
     }

@@ -53,6 +53,14 @@ export interface Config {
   notifyOnApproval?: boolean
   /** Notify when a turn finishes. */
   notifyOnTurnEnd?: boolean
+  /**
+   * App URL scheme for notification taps, e.g. `dshmobile`.
+   *
+   * With it, a tap is handled by the app, which holds the sign-in cookie and
+   * knows the host address. Without it, the link opens a browser that cannot
+   * sign in and shows an error — correct link, useless destination.
+   */
+  deepLinkScheme?: string
   /** Maximum notifications per session per minute. */
   rateLimitPerMinute?: number
   /**
@@ -78,6 +86,8 @@ export const Config: z<Config> = z.object({
     .description('Notify when the agent needs an approval decision'),
   notifyOnTurnEnd: z.boolean().default(true)
     .description('Notify when a turn finishes'),
+  deepLinkScheme: z.string().default('dshmobile')
+    .description('App URL scheme for notification taps'),
   rateLimitPerMinute: z.natural().default(20)
     .description('Maximum notifications per session per minute'),
   wakeBridgeUrl: z.string().description('Base URL of a wol-bridge on the LAN'),
@@ -139,6 +149,7 @@ export function apply(ctx: Context, config: Config): void {
           reason: req.reason,
           sessionId,
           baseUrl: config.baseUrl,
+          deepLinkScheme: config.deepLinkScheme,
         }))
         // Delegate unconditionally and immediately. This is a waterfall: a
         // listener that returns without calling `next()` claims the request
@@ -154,6 +165,7 @@ export function apply(ctx: Context, config: Config): void {
         deliver(sessionId, () => turnFinishedMessage({
           sessionId,
           baseUrl: config.baseUrl,
+          deepLinkScheme: config.deepLinkScheme,
         }))
       }))
     }

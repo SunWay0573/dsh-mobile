@@ -19,11 +19,31 @@
             android:name=".MainActivity"
             android:exported="true"
             android:label="@string/app_name"
+            android:launchMode="singleTop"
             android:theme="@style/Theme.DshMobile"
             android:windowSoftInputMode="adjustResize">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+
+            <!--
+              Notification taps.
+
+              The tap target cannot be the host's own URL: that opens a browser,
+              and the sign-in cookie lives in this app's WebView, so the link
+              would land on an unauthenticated page. mobile-bridge sends
+              dshmobile://session/<id> instead and this filter catches it.
+
+              singleTop above matters too: without it, a tap while the app is
+              already running starts a second copy and the deep link arrives at
+              an activity the user is not looking at.
+            -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="dshmobile" />
             </intent-filter>
         </activity>
     </application>

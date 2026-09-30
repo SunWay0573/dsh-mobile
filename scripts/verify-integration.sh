@@ -389,10 +389,13 @@ else
     fail "expected priority urgent, got '${priority:-none}'"
   fi
 
-  if [[ "$click" == *"e2e-approval-session"* ]]; then
-    pass "the notification deep-links back to the session"
+  # The scheme matters, not just the session id. An https link opens a browser,
+  # and the sign-in cookie lives in the app's WebView, so that tap would land on
+  # an unauthenticated page -- a correct link with a useless destination.
+  if [[ "$click" == "dshmobile://session/e2e-approval-session" ]]; then
+    pass "the notification deep-links into the app, not a browser"
   else
-    fail "expected a deep link to the session, got '${click:-none}'"
+    fail "expected dshmobile://session/e2e-approval-session, got '${click:-none}'"
   fi
 
   if [[ "$auth" == "Bearer e2e-token" ]]; then

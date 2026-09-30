@@ -79,6 +79,22 @@ that failure mode is far worse than a missing push.
     rateLimitPerMinute: 20
 ```
 
+### The tap target is an app scheme, and that is not cosmetic
+
+A notification's `click` cannot be the host's own URL. That link opens a
+**browser**, and the sign-in cookie lives in the Android app's WebView — so the
+tap lands on an unauthenticated page and shows an error. Correct link, useless
+destination.
+
+`deepLinkScheme` (default `dshmobile`) makes the tap target
+`dshmobile://session/<id>`, which the app handles. The app already knows the host
+address from its own settings, so this is also the one link that works without
+`baseUrl` being configured.
+
+```yaml
+    deepLinkScheme: dshmobile    # default; set to '' for the https form
+```
+
 ## 2. Privacy curtain — implemented as `lock_screen`
 
 Locks the screen while you are operating remotely, so nobody standing at the

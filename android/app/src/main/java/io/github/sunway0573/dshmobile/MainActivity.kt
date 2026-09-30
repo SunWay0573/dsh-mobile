@@ -1,6 +1,7 @@
 package io.github.sunway0573.dshmobile
 
 import android.annotation.SuppressLint
+import android.content.Intent
 import android.os.Bundle
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
@@ -27,7 +28,9 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -61,8 +64,18 @@ import kotlinx.coroutines.launch
  */
 class MainActivity : FragmentActivity() {
 
+    /**
+     * A session id from a notification tap, waiting to be handed to the UI.
+     *
+     * Held as state rather than read once in `onCreate`, because a tap while the
+     * app is already running arrives through `onNewIntent` and has to reach a
+     * composition that is already up.
+     */
+    private val pendingSession = mutableStateOf<String?>(null)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        pendingSession.value = DeepLinks.sessionId(intent?.data?.toString())
         val activity = this
         setContent {
             MaterialTheme {
@@ -78,10 +91,24 @@ class MainActivity : FragmentActivity() {
                     enabled = settings.lockWithBiometric && biometricPossible,
                     promptOnStart = coldStart,
                 ) {
-                    DshMobileApp(settings, biometricPossible)
+                    DshMobileApp(settings, biometricPossible, pendingSession)
                 }
             }
         }
+    }
+
+    /**
+     * A notification tap while the app is already running.
+     *
+     * `singleTop` in the manifest routes it here rather than starting a second
+     * copy. `setIntent` matters too: without it a later `getIntent()` still
+     * reports the launch intent, and the tap appears to do nothing the second
+     * time.
+     */
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        pendingSession.value = DeepLinks.sessionId(intent.data?.toString())
     }
 }
 
@@ -108,8 +135,16 @@ private fun securityNote(biometricPossible: Boolean): String =
 private enum class Screen { Home, Session }
 
 @Composable
-private fun DshMobileApp(settings: AppSettings, biometricPossible: Boolean) {
+private fun DshMobileApp(
+    settings: AppSettings,
+    biometricPossible: Boolean,
+    pendingSession: MutableState<String?>,
+) {
     var screen by remember { mutableStateOf(Screen.Home) }
+    // The URL the session screen should load. Normally the host root, but a
+    // notification tap points it at one session.
+    var sessionTarget by remember { mutableStateOf("") }
+    var deepLinkNotice by remember { mutableStateOf<String?>(null) }
     var activeWebView by remember { mutableStateOf<WebView?>(null) }
     var webState by remember { mutableStateOf<WebState>(WebState.Loading) }
 
@@ -128,6 +163,23 @@ private fun DshMobileApp(settings: AppSettings, biometricPossible: Boolean) {
     BackHandler(enabled = screen == Screen.Session) {
         val view = activeWebView
         if (view != null && view.canGoBack()) view.goBack() else screen = Screen.Home
+    }
+
+    // A notification tap. The host address comes from settings, because the app
+    // is the only party that knows it.
+    val requestedSession = pendingSession.value
+    LaunchedEffect(requestedSession) {
+        if (requestedSession == null) return@LaunchedEffect
+        pendingSession.value = null
+        val target = DeepLinks.sessionUrl(settings.hostUrl, requestedSession)
+        if (target == null) {
+            deepLinkNotice = "Open a session once to set the host address, then a " +
+                "notification tap will go straight there."
+        } else {
+            sessionTarget = target
+            webState = WebState.Loading
+            screen = Screen.Session
+        }
     }
 
     when (screen) {
@@ -149,7 +201,9 @@ private fun DshMobileApp(settings: AppSettings, biometricPossible: Boolean) {
                 settings.lockWithBiometric = it
             },
             wakeStatus = wakeStatus,
+            deepLinkNotice = deepLinkNotice,
             onOpenSession = {
+                sessionTarget = ""
                 webState = WebState.Loading
                 screen = Screen.Session
             },
@@ -166,7 +220,7 @@ private fun DshMobileApp(settings: AppSettings, biometricPossible: Boolean) {
         )
 
         Screen.Session -> SessionScreen(
-            url = hostUrl,
+            url = sessionTarget.ifEmpty { hostUrl },
             state = webState,
             onState = { webState = it },
             onCreated = { activeWebView = it },
@@ -190,6 +244,7 @@ private fun HomeScreen(
     biometricPossible: Boolean,
     onLockWithBiometricChange: (Boolean) -> Unit,
     wakeStatus: String?,
+    deepLinkNotice: String?,
     onOpenSession: () -> Unit,
     onSaveHost: () -> Unit,
     hostSaved: Boolean,
@@ -221,6 +276,10 @@ private fun HomeScreen(
                     "Set the host address below first.",
                     style = MaterialTheme.typography.bodySmall,
                 )
+            }
+
+            deepLinkNotice?.let {
+                Text(it, style = MaterialTheme.typography.bodySmall)
             }
 
             Card(modifier = Modifier.fillMaxWidth()) {

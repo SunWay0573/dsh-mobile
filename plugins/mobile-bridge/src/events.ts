@@ -20,6 +20,8 @@ export interface ApprovalNoticeInput {
   sessionId?: string | undefined
   /** Host base URL, e.g. `https://machine.tailnet.ts.net`. */
   baseUrl?: string | undefined
+  /** App URL scheme, so a tap is handled by the app rather than a browser. */
+  deepLinkScheme?: string | undefined
 }
 
 /** Input for a "work finished" notification. */
@@ -28,6 +30,8 @@ export interface TurnFinishedInput {
   sessionId?: string | undefined
   /** Host base URL. */
   baseUrl?: string | undefined
+  /** App URL scheme, so a tap is handled by the app rather than a browser. */
+  deepLinkScheme?: string | undefined
   /** Short label for the session, when one is known. */
   label?: string | undefined
 }
@@ -35,19 +39,48 @@ export interface TurnFinishedInput {
 /**
  * Build a deep link back into a session.
  *
- * Returns undefined when either half is missing rather than producing a link
- * that opens the app at a useless place — a notification that navigates
- * nowhere is worse than one that does not pretend to.
+ * ## Why there are two forms
+ *
+ * The HTTPS form opens a browser. That sounds right and is not: the sign-in
+ * cookie lives in the Android app's WebView, not in the browser, so a tapped
+ * notification lands on an unauthenticated page and shows an error. The link is
+ * correct and useless.
+ *
+ * The app-scheme form (`dshmobile://session/<id>`) is handled by the app, which
+ * has the cookie and already knows the host address. **Set `deepLinkScheme` and
+ * the notification opens the session; leave it unset and the link opens a
+ * browser that cannot sign in.**
+ *
+ * The scheme form does not need `baseUrl`, because the app supplies the host
+ * from its own settings — so a scheme link is the one thing here that works
+ * without the operator configuring a public URL.
+ *
+ * @param baseUrl public base URL of the host, for the HTTPS form.
+ * @param sessionId session to link to.
+ * @param scheme app URL scheme, when the app should handle the tap.
+ * @returns a link, or undefined when there is not enough to build one — a
+ *   notification that navigates nowhere is worse than one that does not pretend
+ *   to be tappable.
  */
 export function sessionUrl(
   baseUrl: string | undefined,
   sessionId: string | undefined,
+  scheme?: string | undefined,
 ): string | undefined {
-  if (baseUrl === undefined || baseUrl === '' || sessionId === undefined || sessionId === '') {
-    return undefined
+  if (sessionId === undefined || sessionId === '') return undefined
+  const encoded = encodeURIComponent(sessionId)
+
+  const trimmedScheme = scheme?.trim()
+  if (trimmedScheme !== undefined && trimmedScheme !== '') {
+    // Strip trailing colons and slashes: people write the scheme as
+    // `dshmobile`, `dshmobile:` and `dshmobile://`, and each would otherwise
+    // produce a different, differently-broken URL.
+    return `${trimmedScheme.replace(/[:/]+$/, '')}://session/${encoded}`
   }
+
+  if (baseUrl === undefined || baseUrl === '') return undefined
   const trimmed = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl
-  return `${trimmed}/#/session/${encodeURIComponent(sessionId)}`
+  return `${trimmed}/#/session/${encoded}`
 }
 
 /**
@@ -70,7 +103,7 @@ export function approvalNeededMessage(input: ApprovalNoticeInput): NotifyMessage
     priority: 'urgent',
     tags: ['warning'],
   }
-  const click = sessionUrl(input.baseUrl, input.sessionId)
+  const click = sessionUrl(input.baseUrl, input.sessionId, input.deepLinkScheme)
   if (click !== undefined) message.click = click
   return message
 }
@@ -91,7 +124,7 @@ export function turnFinishedMessage(input: TurnFinishedInput): NotifyMessage {
     priority: 'default',
     tags: ['white_check_mark'],
   }
-  const click = sessionUrl(input.baseUrl, input.sessionId)
+  const click = sessionUrl(input.baseUrl, input.sessionId, input.deepLinkScheme)
   if (click !== undefined) message.click = click
   return message
 }

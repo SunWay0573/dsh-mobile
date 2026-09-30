@@ -185,6 +185,43 @@ describe('sessionUrl', () => {
   })
 })
 
+describe('sessionUrl', () => {
+  // Two forms, and the difference is not cosmetic: the HTTPS one opens a
+  // browser that has no sign-in cookie, so the tap shows an error page.
+  test('prefers the app scheme when one is given', () => {
+    assert.equal(
+      sessionUrl('https://host.ts.net', 'session-abc', 'dshmobile'),
+      'dshmobile://session/session-abc',
+    )
+  })
+
+  test('a scheme link needs no base url, because the app knows the host', () => {
+    assert.equal(sessionUrl(undefined, 'abc', 'dshmobile'), 'dshmobile://session/abc')
+  })
+
+  test('tolerates a scheme written with a trailing colon', () => {
+    assert.equal(sessionUrl(undefined, 'abc', 'dshmobile://'), 'dshmobile://session/abc')
+    assert.equal(sessionUrl(undefined, 'abc', 'dshmobile:'), 'dshmobile://session/abc')
+  })
+
+  test('falls back to https when the scheme is blank', () => {
+    assert.equal(sessionUrl('https://h', 'abc', ''), 'https://h/#/session/abc')
+    assert.equal(sessionUrl('https://h', 'abc', '   '), 'https://h/#/session/abc')
+  })
+
+  // A notification that navigates nowhere is worse than one that does not
+  // pretend to be tappable.
+  test('no session id means no link, whatever else is set', () => {
+    assert.equal(sessionUrl('https://h', undefined, 'dshmobile'), undefined)
+    assert.equal(sessionUrl('https://h', '', 'dshmobile'), undefined)
+  })
+
+  test('escapes the session id in both forms', () => {
+    assert.equal(sessionUrl(undefined, 'a/b', 'dshmobile'), 'dshmobile://session/a%2Fb')
+    assert.equal(sessionUrl('https://h', 'a/b'), 'https://h/#/session/a%2Fb')
+  })
+})
+
 describe('message builders', () => {
   test('an approval request is urgent, because missing it means silent denial', () => {
     const result = approvalNeededMessage({ toolName: 'bash' })
