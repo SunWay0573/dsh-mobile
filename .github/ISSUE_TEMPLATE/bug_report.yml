@@ -1,0 +1,96 @@
+name: Bug report
+description: Something in this repository is broken or does not do what it says.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Before filing, two things are worth a minute:
+
+        **Read the failure text.** This project puts real effort into error
+        messages that name the cause. A DSH host that refuses this device prints
+        a one-time sign-in link on every start, and that is the usual reason the
+        session screen shows an authentication error.
+
+        **Check the plugin actually loaded.** Three bugs have shipped here where
+        a plugin installed cleanly, typechecked, passed every unit test, and
+        never ran. The host says so at boot:
+
+        ```sh
+        dsh --profile web --no-open       # watch for "did not activate"
+        dsh --profile web --dump-config   # the plugin row should be in there
+        ```
+
+  - type: dropdown
+    id: component
+    attributes:
+      label: Which component?
+      options:
+        - plugins/sleep-guard (sleep inhibition)
+        - plugins/mobile-bridge (push, curtain, wake)
+        - wol-bridge (magic packets)
+        - Android app
+        - Documentation
+        - Something else
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Versions
+      description: DSH version, and the component's version from its package.json.
+      placeholder: "DSH 0.2.0-rc.2, sleep-guard 0.1.0"
+    validations:
+      required: true
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you saw, and what you expected instead.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: How to reproduce
+      description: |
+        The exact steps or commands. If it involves a plugin, include how it was
+        installed and what the host printed at boot.
+      placeholder: |
+        1. dsh plugin --profile web add ...
+        2. dsh --profile web --no-open
+        3. ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence
+      description: |
+        Paste the relevant output. Which output depends on the component:
+
+        - **sleep-guard** — `pmset -g assertions`. Always. It names the process
+          holding the assertion, and a *pre-existing* permanent `caffeinate`
+          from some other tool is a common red herring, so the pid matters.
+        - **wol-bridge** — the command, its exit code, and the `--json` output.
+        - **mobile-bridge** — the host log, and whether the notification arrived.
+        - **Android** — `./gradlew` output, or the banner text the app showed.
+
+        Redact your ntfy topic, MAC address and tunnel hostname before pasting.
+      render: text
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I ran `scripts/verify.sh` and pasted what it reported.
+          required: false
+        - label: I removed anything secret from the output above (ntfy topic, MAC, tunnel host).
+          required: true

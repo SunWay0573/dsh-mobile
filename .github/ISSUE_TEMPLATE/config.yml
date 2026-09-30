@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  # Security reports must not start as a public issue. SECURITY.md routes them
+  # through GitHub's private vulnerability reporting instead; this entry exists
+  # so the issue chooser says so before someone types a repro into a text box.
+  - name: Security vulnerability
+    url: https://github.com/SunWay0573/dsh-mobile/security/advisories/new
+    about: Report privately. Please do not open a public issue for a security problem.
+  - name: Setup help — tunnel, power, waking
+    url: https://github.com/SunWay0573/dsh-mobile/tree/main/docs
+    about: Most "it will not connect" cases are covered by the tunnel and power guides.

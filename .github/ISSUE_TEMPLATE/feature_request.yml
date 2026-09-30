@@ -1,0 +1,64 @@
+name: Feature request
+description: Suggest something this project should do.
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This project has one architectural rule that most ideas run into, so it
+        is worth stating up front:
+
+        **The WebView owns everything that comes from the host; native owns what
+        the host cannot do.**
+
+        A suggestion to render something natively that DSH's web client already
+        renders will usually be declined, because it means reimplementing DSH's
+        RPC protocol and cookie exchange to duplicate a screen that already
+        works. A native session list was on the plan and was withdrawn for
+        exactly this reason — see `android/README.md`.
+
+        Suggestions that fit: things the host has no way to do. Waking a sleeping
+        machine, locking a screen, surviving the OS killing the app, holding a
+        sleep assertion.
+
+  - type: dropdown
+    id: component
+    attributes:
+      label: Which component?
+      options:
+        - plugins/sleep-guard
+        - plugins/mobile-bridge
+        - wol-bridge
+        - Android app
+        - Documentation
+        - New component
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve?
+      description: |
+        Describe the situation you are in, not the solution you have in mind.
+        A concrete scenario is worth more than a feature name.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What you would like to happen
+    validations:
+      required: false
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: What you tried instead
+      description: |
+        Existing tools, workarounds, or why they did not fit. "I use X but it
+        cannot Y" is genuinely useful — part of this project's design came from
+        auditing a commercial remote-desktop tool to find out where it stops.
+    validations:
+      required: false
