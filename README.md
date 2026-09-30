@@ -180,10 +180,17 @@ scripts/verify.sh --strict   # what CI runs; missing toolchains are failures
 scripts/verify.sh --without-integration   # skip the slow one
 ```
 
-The integration check is the interesting one. It installs both plugins into an
-isolated `DSH_HOME`, boots a real DSH host, and asserts that they load — because
-three bugs shipped here that installed cleanly, typechecked, passed every unit
-test, and never ran. Nothing else in the repository can see that.
+The integration check is the interesting one. It installs the plugins into an
+isolated `DSH_HOME`, boots a real DSH host, and asserts two things that nothing
+else can:
+
+- **that they load at all** — three bugs shipped here that installed cleanly,
+  typechecked, passed every unit test, and never ran;
+- **that `sleep-guard` works** — a fixture plugin opens a background job, and
+  the script watches `pmset -g assertions` (or `systemd-inhibit` on Linux) for
+  the assertion to appear while the work is in flight and disappear when it
+  finishes. Observed from outside the process, because a plugin reporting its
+  own state proves nothing.
 
 ---
 
