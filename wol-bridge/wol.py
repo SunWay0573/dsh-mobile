@@ -248,10 +248,9 @@ def validate_broadcast(broadcast: str) -> str:
     try:
         address = ipaddress.IPv4Address(candidate)
     except ipaddress.AddressValueError as exc:
-        # Only literal IPv4 literals are accepted. A hostname here would
-        # have to resolve to a broadcast address to be useful, which is
-        # vanishingly rare, and DNS failures at wake time are a bad trade for
-        # that rarity.
+        # Only literal IPv4 addresses are accepted here. A hostname would have
+        # to resolve to a broadcast address to be useful, which is vanishingly
+        # rare, and a DNS lookup at wake time is a bad trade for that rarity.
         raise WolError(
             f"{broadcast!r} is not an IPv4 address; expected a literal "
             "broadcast address such as 192.168.10.255 or 255.255.255.255"
