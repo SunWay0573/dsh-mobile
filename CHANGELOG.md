@@ -5,9 +5,17 @@ Notable changes to this project. Format follows
 follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once there is
 something to version.
 
-The repository is pre-release: nothing here has been published to a registry, and
-the Android app has no release APK. Entries under Unreleased describe what is on
-`main` today.
+The repository is pre-release: nothing here has been published to a registry.
+Entries under Unreleased describe what is on `main` today.
+
+## [v0.1.0-pre] — first installable build
+
+A GitHub pre-release with a **debug-signed** APK attached. It installs by
+sideloading and is fine for trying this out; it is not something to distribute,
+and a release signing key is a decision for whoever runs this rather than one
+made on their behalf.
+
+Everything below this heading is what that build contains.
 
 ## [Unreleased]
 

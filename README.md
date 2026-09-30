@@ -169,8 +169,16 @@ ifconfig en0 | grep ether           # what it is actually using
 If these differ, turn off "Private Wi-Fi Address" for that network first.
 See [`docs/setup-power.md`](docs/setup-power.md).
 
-**4. Build and install the app.** Grab an APK from
-[Releases](https://github.com/SunWay0573/dsh-mobile/releases), or build it yourself — see [`android/`](android/).
+**4. Install the app.** [`v0.1.0-pre`](https://github.com/SunWay0573/dsh-mobile/releases/tag/v0.1.0-pre)
+has a debug-signed APK you can sideload today:
+
+```sh
+adb install app-debug.apk
+```
+
+Or build it yourself — see [`android/`](android/). A release signing key is a
+decision for whoever runs this, and a secret, so the pre-release is debug-signed
+and says so.
 
 **Verify any of it** with the script CI itself calls:
 
@@ -211,12 +219,13 @@ built in the open.
 |---|---|---|
 | Design & architecture | ✅ [`docs/design.zh.md`](docs/design.zh.md) | — |
 | `plugins/sleep-guard` | ✅ work-aware sleep inhibition | 54 |
-| `plugins/mobile-bridge` | ✅ push, privacy curtain, wake trigger | 60 |
+| `plugins/mobile-bridge` | ✅ push, privacy curtain, wake trigger | 68 |
 | `wol-bridge` | ✅ magic packets + HTTP endpoint | 73 |
-| Android app | ✅ builds; APK + 30 unit tests verified locally | 30 |
+| Android app | ✅ builds; APK + 55 unit tests verified locally | 55 |
+| Releases | ✅ [`v0.1.0-pre`](https://github.com/SunWay0573/dsh-mobile/releases/tag/v0.1.0-pre), debug-signed APK | — |
 | CI | ⏸ written and on `ci-workflow`; run [`scripts/enable-ci.sh`](scripts/enable-ci.sh) | — |
 
-217 tests total, plus integration verification against a real DSH host. Both
+250 tests total, plus integration verification against a real DSH host. Both
 plugins are installed into an isolated `DSH_HOME` and booted on every
 `scripts/verify.sh` run, which is how three silent-non-load bugs were found that
 no typecheck or unit test could see. Both are now checked automatically:
@@ -224,8 +233,8 @@ no typecheck or unit test could see. Both are now checked automatically:
 [`scripts/verify-integration.sh`](scripts/verify-integration.sh) by doing it.
 
 The Android app has been built against a real SDK —
-`BUILD SUCCESSFUL`, a 9.5 MB debug APK, and its 21 unit tests passing — so it is
-verified rather than merely written.
+`BUILD SUCCESSFUL`, a 10.7 MB debug APK, and its 55 unit tests passing — so it
+is verified rather than merely written.
 
 The CI workflow is written and lives on the `ci-workflow` branch. GitHub refuses
 to let an OAuth app push `.github/workflows/` without the `workflow` scope — a
