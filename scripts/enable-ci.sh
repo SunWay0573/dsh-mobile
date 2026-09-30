@@ -22,6 +22,10 @@ set -uo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT" || exit 1
 
+# The canonical workflow lives at a path that CAN be committed, because one that
+# only exists in a git branch object is one `git gc` away from being lost, and
+# is invisible on GitHub where a user might want to read it.
+SOURCE_FILE="ci/github-workflow.yml"
 SOURCE_BRANCH="${CI_SOURCE_BRANCH:-ci-workflow}"
 TARGET=".github/workflows/ci.yml"
 
@@ -67,8 +71,8 @@ else
 fi
 
 # ── the workflow itself must exist on the source branch ─────────────────────
-if git show "$SOURCE_BRANCH:$TARGET" >/dev/null 2>&1; then
-  ok "workflow found on branch $SOURCE_BRANCH"
+if [[ -f "$SOURCE_FILE" ]] || git show "$SOURCE_BRANCH:$TARGET" >/dev/null 2>&1; then
+  ok "workflow found at $SOURCE_FILE"
   HAVE_SOURCE=1
 else
   HAVE_SOURCE=0
@@ -109,7 +113,12 @@ fi
 
 # ── install it ──────────────────────────────────────────────────────────────
 mkdir -p .github/workflows
-git show "$SOURCE_BRANCH:$TARGET" > "$TARGET"
+if [[ -f "$SOURCE_FILE" ]]; then
+  mkdir -p "$(dirname "$TARGET")"
+  cp "$SOURCE_FILE" "$TARGET"
+else
+  git show "$SOURCE_BRANCH:$TARGET" > "$TARGET"
+fi
 git add "$TARGET"
 
 if git diff --cached --quiet; then

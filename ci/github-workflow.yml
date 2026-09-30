@@ -1,0 +1,126 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Every check lives in scripts/verify.sh, and CI calls it rather than
+# reimplementing anything. The reason is drift: when this file and that script
+# disagree, the script is right and this file is a bug. It also means a
+# contributor can run exactly what CI runs without pushing -- which matters
+# most for the Android job, whose first run costs a ~1 GB SDK download.
+#
+# Each job passes --strict, so a check that would silently skip (a missing
+# toolchain) fails instead. A check that quietly did nothing is worse than one
+# that failed, because it looks like a pass.
+
+jobs:
+  hygiene:
+    name: Repo hygiene
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # This project's setup instructions involve tunnel configs, MAC addresses
+      # and push topics. All three are easy to commit by accident, and the blast
+      # radius is "someone else can wake or control your machine".
+      - run: scripts/verify.sh --strict --only=hygiene
+
+  plugins:
+    name: Plugins
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: plugins/pnpm-lock.yaml
+      # Typechecking before testing is deliberate. It runs against the real DSH
+      # type definitions and is what caught three API mistakes that would
+      # otherwise have failed silently: jobs.list() returning only unowned jobs,
+      # onJobsChanged having been removed in 0.2.x, and approval/request being a
+      # waterfall whose observers must delegate.
+      - run: scripts/verify.sh --strict --only=plugins
+
+  wol-bridge:
+    name: wol-bridge
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      # Linux is this component's deployment target and is where SO_BROADCAST is
+      # actually enforced (macOS tolerates its absence), so running the suite
+      # here is real coverage rather than a formality.
+      - run: scripts/verify.sh --strict --only=wol-bridge
+
+  integration:
+    name: Integration
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # Boots a real DSH host with both plugins installed and asserts that they
+      # load. This is the only job here that can see a plugin which installs,
+      # typechecks and passes every unit test, and never runs -- which is how
+      # three separate bugs shipped before this job existed.
+      #
+      # It downloads the DSH CLI on first run and caches it under ~/.cache, so
+      # the cost is a couple of minutes rather than a couple of minutes per
+      # plugin.
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/dsh-e2e-cli
+          key: dsh-cli-${{ runner.os }}-0.2.0-rc.2
+      - run: scripts/verify.sh --strict --only=integration
+
+  android:
+    name: Android
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+
+      # compileSdk 35 needs platforms;android-35, and AGP 8.7.3 does not
+      # auto-download SDK platforms. The runner image ships an SDK at a path
+      # that has moved between image revisions, so this resolves it rather than
+      # assuming one, and installs the components explicitly. Without this step
+      # the build fails with a missing-platform error that reads like a
+      # configuration mistake.
+      - name: Ensure the SDK has what compileSdk 35 needs
+        run: |
+          set -euo pipefail
+          SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          if [ ! -d "$SDK" ]; then
+            echo "::error::no Android SDK at $SDK"; exit 1
+          fi
+          echo "ANDROID_HOME=$SDK" >> "$GITHUB_ENV"
+          SDKMGR="$(find "$SDK/cmdline-tools" -name sdkmanager -type f 2>/dev/null | head -1)"
+          if [ -z "$SDKMGR" ]; then
+            echo "::error::sdkmanager not found under $SDK/cmdline-tools"; exit 1
+          fi
+          yes | "$SDKMGR" --licenses >/dev/null 2>&1 || true
+          "$SDKMGR" --install "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+
+      - run: scripts/verify.sh --strict --only=android
+
+      # The APK is the deliverable, so a green job that produced no APK is a
+      # failure worth surfacing rather than a job that quietly passed. This step
+      # is skipped if the build above failed, so it only fires on that specific
+      # inconsistency.
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: dsh-mobile-debug-apk
+          path: android/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
