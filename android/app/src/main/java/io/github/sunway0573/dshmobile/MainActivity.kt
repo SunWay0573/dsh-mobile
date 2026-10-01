@@ -11,9 +11,13 @@ import android.webkit.WebViewClient
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
@@ -130,6 +134,56 @@ private fun securityNote(biometricPossible: Boolean): String =
         "This device has no biometric enrolled, so the lock cannot be enabled. " +
             "Add a fingerprint in system settings first."
     }
+
+/**
+ * Pins the document to the WebView's real height, in pixels.
+ *
+ * ## The bug this exists for
+ *
+ * On a real device the session screen rendered **blank white** while the page
+ * itself was perfect: `readyState === "complete"`, `#root` held 35 000 characters
+ * of DOM, and the DSH UI was fully built -- with every element measuring zero
+ * height.
+ *
+ * The cause is that this WebView's CSS viewport height is 0 even though the view
+ * is full-screen and `window.innerHeight` reports 853. Both `100vh` and
+ * `height: 100%` therefore resolve to 0, so DSH's own
+ * `html, body, #root { height: 100% }` collapses the whole layout. Measured on a
+ * Redmi Note 15 Pro:
+ *
+ *     html:100%  -> frame 0     html:100vh -> frame 0     html:853px -> frame 853
+ *
+ * `100vh` failing is the tell: it takes no parent into account, so nothing about
+ * DSH's markup can explain it.
+ *
+ * ## Why a pixel height rather than a percentage
+ *
+ * Because the percentage is the thing that is broken, and this is measured rather
+ * than assumed. Setting `html` alone is enough -- body and `#root` then resolve
+ * their own `height: 100%` against it and come out at 853 too, which was checked
+ * before relying on it.
+ *
+ * ## What is not known
+ *
+ * The mechanism. Chromium draws 853 px of content into a viewport it simultaneously
+ * reports as zero-height, and forcing a reload with the view already sized does
+ * not change it. `useWideViewPort` was tried and made no difference. This is a
+ * workaround for an observed behaviour, not a fix derived from a cause, and the
+ * comment says so rather than implying more confidence than there is.
+ */
+private const val WEBVIEW_HEIGHT_FIX = """
+(function () {
+  var apply = function () {
+    var h = window.innerHeight;
+    if (!h) return;
+    document.documentElement.style.setProperty('height', h + 'px', 'important');
+  };
+  apply();
+  window.addEventListener('resize', apply);
+  window.addEventListener('orientationchange', function () { setTimeout(apply, 150); });
+  if (window.visualViewport) { window.visualViewport.addEventListener('resize', apply); }
+})();
+"""
 
 /** Which screen is showing. */
 private enum class Screen { Home, Session }
@@ -443,7 +497,16 @@ private fun SessionScreen(
     val reportState by rememberUpdatedState(onState)
     val reportCreated by rememberUpdatedState(onCreated)
 
-    Column(modifier = Modifier.fillMaxSize()) {
+    // `targetSdk 35` means Android 15+ draws the app edge to edge whether it asks
+    // to or not, so without this the DSH UI's top row sits underneath the status
+    // bar -- visible on a real device as the first sidebar icon overlapping the
+    // clock. Padding here rather than in the page because DSH's viewport meta has
+    // no `viewport-fit=cover`, so `env(safe-area-inset-*)` is 0 inside it.
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .windowInsetsPadding(WindowInsets.safeDrawing),
+    ) {
         when (state) {
             is WebState.Failed -> FailureBanner(
                 message = state.message,
@@ -470,8 +533,18 @@ private fun SessionScreen(
                     // bundles in DOM storage; without this it re-bootstraps from
                     // scratch on every launch.
                     settings.domStorageEnabled = true
+
+                    // Honour the page's own
+                    //   <meta name="viewport" content="width=device-width, initial-scale=1">
+                    // Correct on its own terms. It is NOT what fixes the collapse
+                    // described at WEBVIEW_HEIGHT_FIX below -- that was tried and
+                    // changed nothing.
+                    settings.useWideViewPort = true
                     webViewClient = object : WebViewClient() {
                         override fun onPageFinished(view: WebView, loadedUrl: String?) {
+                            // See WEBVIEW_HEIGHT_FIX. Re-applied on every load,
+                            // because a reload produces the same collapsed layout.
+                            view.evaluateJavascript(WEBVIEW_HEIGHT_FIX, null)
                             reportState(WebState.Ready)
                         }
 

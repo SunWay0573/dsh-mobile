@@ -465,8 +465,13 @@ See [`troubleshooting.md`](troubleshooting.md) for the symptoms.
 - **`wol-bridge` has never run on a Raspberry Pi.** All testing was macOS. Linux
   is where `SO_BROADCAST` is actually enforced, so CI running it there is real
   coverage rather than a formality.
-- **The Android app has never run on a device**, only built and unit tested.
-  Everything needing a screen, a WebView or a network is unverified.
+- ~~The Android app has never run on a device.~~ **It has now.** Installed over
+  ADB on a Redmi Note 15 Pro (Android 16) and driven through a real session
+  against a real host. Two bugs came out of it that no amount of building or
+  unit testing could have found — a WebView height collapse and content drawn
+  under the status bar — and both are fixed. Still unverified on a device:
+  background survival, the wake button against real hardware, and the biometric
+  lock.
 - **The systemd unit in the `wol-bridge` README is written from knowledge**, not
   started.
 - **No release signing key exists.** The published APK is debug-signed.

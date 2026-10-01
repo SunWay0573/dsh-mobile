@@ -244,7 +244,7 @@ tool; everything in the table below is implemented, tested and pushed.
 | `plugins/sleep-guard` | ✅ work-aware sleep inhibition | 54 |
 | `plugins/mobile-bridge` | ✅ push, privacy curtain, wake trigger | 68 |
 | `wol-bridge` | ✅ magic packets + HTTP endpoint | 73 |
-| Android app | ✅ debug **and release** build; APK + 55 unit tests verified locally | 55 |
+| Android app | ✅ **runs on a real device**; debug + release build, 55 unit tests | 55 |
 | Releases | ✅ [`v0.1.0-pre`](https://github.com/SunWay0573/dsh-mobile/releases/tag/v0.1.0-pre), debug-signed APK | — |
 | CI | ⏸ written and on `ci-workflow`; run [`scripts/enable-ci.sh`](scripts/enable-ci.sh) | — |
 
