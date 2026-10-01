@@ -242,6 +242,15 @@ CHECK
       bad "release refuses cleartext by default"
     fi
     run "unit tests" bash -c 'cd android && ./gradlew testDebugUnitTest --no-daemon --quiet'
+    # Building the on-device tests, not running them: running needs a connected
+    # device or emulator, which CI does not have.
+    #
+    # `assembleDebugAndroidTest` rather than `compileDebugAndroidTestKotlin`,
+    # because compiling is not the last step that can fail. A backtick test name
+    # with spaces compiles perfectly and then dies in DEX with "Space characters
+    # in SimpleName ... not allowed prior to DEX version 040" -- which is exactly
+    # how this check was found to be too weak.
+    run "androidTest sources build" bash -c 'cd android && ./gradlew assembleDebugAndroidTest --no-daemon --quiet'
     run "assemble debug APK" bash -c 'cd android && ./gradlew assembleDebug --no-daemon --quiet'
     if compgen -G "android/app/build/outputs/apk/debug/*.apk" >/dev/null; then
       ok "APK produced"

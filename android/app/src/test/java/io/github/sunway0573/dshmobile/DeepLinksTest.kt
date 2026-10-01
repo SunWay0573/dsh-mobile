@@ -94,4 +94,53 @@ class DeepLinksTest {
         val link = DeepLinks.sessionUrl("https://h", DeepLinks.sessionId("dshmobile://session/a%2Fb")!!)
         assertEquals("https://h/#/session/a%2Fb", link)
     }
+
+    // ── 多电脑深链 ────────────────────────────────────────────────────────
+
+    @Test
+    fun `parses a multi-computer link`() {
+        val parts = DeepLinks.computerTarget("dshmobile://computer/pc-mac/session/s-1")
+        assertEquals("pc-mac", parts?.computerId)
+        assertEquals("s-1", parts?.sessionId)
+    }
+
+    @Test
+    fun `the multi-computer form tolerates a query and a trailing slash`() {
+        assertEquals(
+            "s-1",
+            DeepLinks.computerTarget("dshmobile://computer/pc-mac/session/s-1/?utm=ntfy")?.sessionId,
+        )
+    }
+
+    @Test
+    fun `the ids are decoded`() {
+        val parts = DeepLinks.computerTarget("dshmobile://computer/a%2Fb/session/c%2Fd")
+        assertEquals("a/b", parts?.computerId)
+        assertEquals("c/d", parts?.sessionId)
+    }
+
+    // The whole point of the format. An unrecognised computer must not be
+    // resolved to whichever machine happens to be first — on a one-computer
+    // setup the two behaviours are identical, which is why this survives testing
+    // and only breaks once someone pairs a second machine.
+    @Test
+    fun `a malformed multi-computer link yields no target rather than a guess`() {
+        assertNull(DeepLinks.computerTarget(null))
+        assertNull(DeepLinks.computerTarget("dshmobile://computer/pc-mac"))
+        assertNull(DeepLinks.computerTarget("dshmobile://computer/pc-mac/session"))
+        assertNull(DeepLinks.computerTarget("dshmobile://computer//session/s-1"))
+        assertNull(DeepLinks.computerTarget("dshmobile://computer/pc-mac/session/"))
+        assertNull(DeepLinks.computerTarget("dshmobile://session/s-1"))
+        assertNull(DeepLinks.computerTarget("https://example.com/computer/a/session/b"))
+    }
+
+    // The two formats must not be confused with each other: the old one has no
+    // computer, and reading it as the new one would produce a computer called
+    // "session".
+    @Test
+    fun `the single-host form is not read as a multi-computer link`() {
+        assertNull(DeepLinks.computerTarget("dshmobile://session/abc"))
+        assertEquals("abc", DeepLinks.sessionId("dshmobile://session/abc"))
+        assertNull(DeepLinks.sessionId("dshmobile://computer/pc-mac/session/s-1"))
+    }
 }

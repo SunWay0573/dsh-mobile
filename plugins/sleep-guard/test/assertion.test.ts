@@ -279,7 +279,19 @@ describe('max-hold backstop', () => {
 })
 
 describe('re-acquire during a draining release', () => {
-  test('warns rather than leaking a second process', async () => {
+  /**
+   * The two halves of this have to be tested together.
+   *
+   * An earlier version of this suite checked only the first half -- no second
+   * process while the old one is still alive -- and passed while the harmful
+   * half was broken. `acquire()` during a drain returned without doing anything,
+   * on the theory that "the next update() from the host will re-acquire". There
+   * may not be a next update: the busy state can stay true with no further
+   * events, and then the machine holds no assertion at all while work runs.
+   *
+   * Asserting only the safe half is how a test locks a bug in.
+   */
+  test('does not leak a second process while the old one is draining', async () => {
     const child = new FakeChild()
     child.exitOnKill = false
     const h = harness({ child, killGraceMs: 30 })
@@ -287,11 +299,72 @@ describe('re-acquire during a draining release', () => {
 
     const releasing = h.assertion.release()
     h.assertion.acquire()
-    assert.match(h.warnings.join('\n'), /release is still draining/)
     assert.equal(h.spawnCount(), 1, 'no second process while draining')
 
     await releasing
     await tick()
+  })
+
+  test('takes a new assertion once the drain finishes, because work is still running', async () => {
+    const h = harness({ killGraceMs: 10_000 })
+    h.assertion.acquire()
+    const first = h.children[0]!
+    first.exitOnKill = false
+
+    const releasing = h.assertion.release()
+    assert.equal(h.assertion.held, false, 'the old child is being killed')
+
+    // Work resumes before the old child has gone.
+    h.assertion.acquire()
+    assert.equal(h.spawnCount(), 1, 'still only one process while draining')
+
+    // The old child finally exits and the drain completes.
+    first.emitExit(0, 'SIGTERM')
+    await releasing
+    await tick()
+
+    assert.equal(
+      h.assertion.held,
+      true,
+      'work is still running and no further event is coming; an assertion must be held',
+    )
+    assert.equal(h.spawnCount(), 2)
+  })
+
+  test('a deferred acquire does not survive dispose', async () => {
+    const h = harness({ killGraceMs: 10_000 })
+    h.assertion.acquire()
+    const first = h.children[0]!
+    first.exitOnKill = false
+
+    const releasing = h.assertion.release()
+    h.assertion.acquire() // deferred until the drain ends
+    h.assertion.dispose() // ...but the plugin is shutting down
+
+    first.emitExit(0, 'SIGTERM')
+    await releasing
+    await tick()
+
+    assert.equal(h.assertion.held, false, 'a disposed assertion must not take a new one')
+    assert.equal(h.spawnCount(), 1, 'dispose must not restart the process')
+  })
+
+  test('acquire after dispose is inert', () => {
+    const h = harness()
+    h.assertion.dispose()
+    h.assertion.acquire()
+    assert.equal(h.assertion.held, false)
+    assert.equal(h.spawnCount(), 0)
+  })
+
+  test('dispose releases an assertion that is currently held', async () => {
+    const h = harness({ killGraceMs: 30 })
+    h.assertion.acquire()
+    assert.equal(h.assertion.held, true)
+
+    h.assertion.dispose()
+    await h.assertion.release()
+    assert.equal(h.assertion.held, false)
   })
 })
 

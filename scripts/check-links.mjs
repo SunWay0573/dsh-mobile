@@ -67,9 +67,39 @@ const walk = (dir) => {
 }
 walk('.')
 
+// A file that is deliberately ignored is not documentation somebody forgot to
+// add; it is documentation that is not meant to be shipped. This project keeps
+// its local plan documents under `.local/`, excluded through `.git/info/exclude`
+// on purpose. Reporting those as a defect trains the reader to ignore this
+// check, which is a worse outcome than not having it.
+const ignored = new Set()
 if (untracked.length > 0) {
-  console.error(`  ${untracked.length} markdown file(s) are not tracked by git:`)
-  for (const file of untracked) console.error(`    ${file}`)
+  // `-z` matters: without it git quotes non-ASCII paths, and this project's
+  // plan documents have Chinese filenames. The quoted form never equals the
+  // path being tested, so those files silently stopped being recognised as
+  // ignored -- exactly the bug this filter exists to fix, reintroduced by an
+  // encoding default.
+  const collect = (output) => {
+    for (const line of String(output).split('\u0000')) {
+      if (line.trim() !== '') ignored.add(line.trim())
+    }
+  }
+  try {
+    collect(execFileSync('git', ['check-ignore', '-z', '--stdin'], {
+      input: untracked.join('\u0000'),
+      encoding: 'utf8',
+    }))
+  } catch (error) {
+    // `git check-ignore` exits 1 when nothing matched, which is the common case.
+    collect(error.stdout ?? '')
+  }
+}
+
+const genuinelyUntracked = untracked.filter((file) => !ignored.has(file))
+
+if (genuinelyUntracked.length > 0) {
+  console.error(`  ${genuinelyUntracked.length} markdown file(s) are not tracked by git:`)
+  for (const file of genuinelyUntracked) console.error(`    ${file}`)
   console.error('  Untracked documentation is not checked and not shipped.')
   process.exit(1)
 }

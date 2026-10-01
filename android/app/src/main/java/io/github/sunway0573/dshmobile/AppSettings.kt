@@ -57,6 +57,30 @@ class AppSettings(context: Context) {
         get() = prefs.getBoolean(KEY_BIOMETRIC, false)
         set(value) = prefs.edit().putBoolean(KEY_BIOMETRIC, value).apply()
 
+    /**
+     * The wake configuration as one value.
+     *
+     * The four settings already existed individually; this groups them so the
+     * diagnostics screen can load, diff and save them as a unit. Saving them
+     * individually looked fine and meant a half-saved configuration — a new MAC
+     * with the old broadcast address — was possible between two writes.
+     */
+    internal val wakeConfig: io.github.sunway0573.dshmobile.mobile.ui.WakeConfig
+        get() = io.github.sunway0573.dshmobile.mobile.ui.WakeConfig(
+            mac = wakeMac,
+            broadcast = wakeBroadcast,
+            relayUrl = wakeBridgeUrl,
+            relayToken = wakeBridgeToken,
+        )
+
+    /** Persist a whole wake configuration. */
+    internal fun saveWakeConfig(config: io.github.sunway0573.dshmobile.mobile.ui.WakeConfig) {
+        wakeMac = config.mac
+        wakeBroadcast = config.broadcast
+        wakeBridgeUrl = config.relayUrl
+        wakeBridgeToken = config.relayToken
+    }
+
     /** Whether enough is configured to attempt a wake, by either path. */
     val canWake: Boolean
         get() = wakeBridgeUrl.isNotBlank() ||
@@ -66,7 +90,11 @@ class AppSettings(context: Context) {
     val canOpenSession: Boolean
         get() = hostUrl.isNotBlank()
 
-    private companion object {
+    // Internal rather than private: the on-device tests clear and seed these
+    // keys, and they run in the same module. Reaching them through a copy of the
+    // string literals would let a rename break the tests silently, which is the
+    // one thing a test must not do.
+    internal companion object {
         const val PREFS_NAME = "dsh_mobile"
         const val KEY_HOST_URL = "host_url"
         const val KEY_WAKE_MAC = "wake_mac"

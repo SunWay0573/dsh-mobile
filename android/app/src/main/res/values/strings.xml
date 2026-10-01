@@ -1,4 +1,231 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  All user-facing Chinese text lives here rather than inline in the composables.
+
+  Not ceremony: string resources are what the system uses for font-scale and
+  locale handling, and inline literals are the reason apps ship with text that
+  clips at 1.3x font scale. It also makes the copy reviewable in one place, which
+  matters because the wording here is doing real work — most of it is telling
+  someone what to do about a failure.
+-->
 <resources>
-    <string name="app_name">DSH Mobile</string>
+
+    <!-- 通用 -->
+    <string name="app_name">DeepSeek Mobile</string>
+    <string name="common_retry">重试</string>
+    <string name="common_cancel">取消</string>
+    <string name="common_confirm">确定</string>
+    <string name="common_back">返回</string>
+    <string name="common_more">更多</string>
+    <string name="common_settings">设置</string>
+    <string name="common_computer">电脑</string>
+    <string name="common_online">可连接</string>
+    <string name="common_offline">无法连接</string>
+    <string name="common_revoked">授权已失效</string>
+
+    <!-- 底部导航 -->
+    <string name="nav_computers">电脑</string>
+    <string name="nav_tasks">任务</string>
+    <string name="nav_approvals">待审批</string>
+
+    <!-- 1 · 首次连接 -->
+    <string name="welcome_title">连接我的电脑</string>
+    <string name="welcome_subtitle">第一步，也是唯一需要配置的一步</string>
+    <string name="welcome_empty_title">还没有连接任何电脑</string>
+    <string name="welcome_empty_body">在电脑上打开 DeepSeek Harness，进入「设置 → 手机连接」，点「连接手机」生成二维码，然后用这里扫一下。</string>
+    <string name="welcome_scan">扫描电脑二维码</string>
+    <string name="welcome_or">或者</string>
+    <string name="welcome_manual">手动输入地址</string>
+    <string name="welcome_manual_hint">电脑版本较旧、或扫码不方便时使用</string>
+    <string name="welcome_privacy_title">手机不保存对话内容</string>
+    <string name="welcome_privacy_body">完整对话与文件保存在电脑；手机只保留必要身份、凭据和少量短期缓存。</string>
+
+    <!-- 2 · 扫码配对 -->
+    <string name="pair_title">扫描二维码</string>
+    <string name="pair_hint">把电脑上的二维码放进框内</string>
+    <string name="pair_recognising">正在识别…</string>
+    <string name="pair_code">配对码 %1$s · 请在电脑上确认</string>
+    <string name="pair_expires">还剩 %1$s</string>
+    <string name="pair_waiting_title">去电脑上点「允许」</string>
+    <string name="pair_waiting_body">电脑会显示同一个配对码，对上了再确认。</string>
+    <string name="pair_expired_title">二维码已过期</string>
+    <string name="pair_expired_body">每个二维码只有 120 秒有效。请在电脑上重新生成一个。</string>
+    <string name="pair_unreachable_title">连不上这台电脑</string>
+    <string name="pair_unreachable_body">二维码读到了，但网络不通。确认手机和电脑在同一个网络，或者电脑上的连接服务正在运行。</string>
+    <string name="pair_identity">电脑身份</string>
+
+    <!-- 手动输入 -->
+    <string name="manual_title">手动输入地址</string>
+    <string name="manual_address">电脑地址</string>
+    <string name="manual_address_hint">需要包含 http:// 或 https://。局域网内用 http，通过隧道时用 https。</string>
+    <string name="manual_token">一次性登录链接（可选）</string>
+    <string name="manual_token_hint">DSH 每次启动都会打印一条带令牌的链接，用它可以在手机上完成登录。</string>
+    <string name="manual_connect">保存并连接</string>
+
+    <!-- 3 · 电脑列表 -->
+    <string name="computers_title">电脑</string>
+    <string name="computers_checking">正在检查…</string>
+    <string name="computers_count">%1$d 台已连接</string>
+    <string name="computers_disconnected">连接已断开</string>
+    <string name="computers_empty_title">还没有电脑</string>
+    <string name="computers_empty_body">扫描电脑上的二维码即可连接。</string>
+    <string name="computers_scan">扫码连接</string>
+    <string name="computers_add">＋ 添加电脑</string>
+    <string name="computers_selected">当前查看</string>
+    <string name="computers_switch">切换</string>
+    <string name="computers_empty_for_selected">这台电脑上还没有任务</string>
+    <string name="computers_isolated">每台电脑各自独立授权、独立数据。任务、审批和文件都按电脑区分，不会混在一起。</string>
+    <string name="computers_recent_task">最近任务</string>
+    <string name="computers_revoked_title">授权已失效</string>
+    <string name="computers_revoked_body">这台电脑上的授权被撤销了。重新扫码配对即可恢复。</string>
+    <string name="computers_repair">重新配对</string>
+    <string name="computers_offline_title">暂时连不上</string>
+    <string name="computers_offline_body">可能是电脑休眠、网络不通，或 Harness 没在运行。任务仍在电脑上继续，重新连上后会自动同步。</string>
+
+    <!-- 4 · 任务列表 -->
+    <string name="tasks_title">任务</string>
+    <string name="tasks_empty_title">这台电脑上还没有任务</string>
+    <string name="tasks_empty_body">点右上角的 ＋，描述你想让它做什么。</string>
+    <string name="tasks_new">＋ 新建任务</string>
+    <string name="tasks_read_failed_title">读不到任务列表</string>
+    <string name="tasks_read_failed_body">电脑有响应，但返回了错误。电脑上的日志会说明原因。</string>
+    <string name="tasks_stale_title">暂时连不上</string>
+    <string name="tasks_stale_body">下面是上次同步到的列表，可能不是最新的。手机断线不会主动停止已提交的任务。</string>
+    <string name="tasks_older">更早</string>
+    <string name="status_running">进行中</string>
+    <string name="status_waiting_approval">待审批</string>
+    <string name="status_done">已完成</string>
+    <string name="status_stopped">已停止</string>
+
+    <!-- 5 · 任务对话 -->
+    <string name="conv_me">我</string>
+    <string name="conv_empty_title">这个任务还没有消息</string>
+    <string name="conv_empty_body">在下面描述你想让它做什么。</string>
+    <string name="conv_read_failed_title">消息读取失败</string>
+    <string name="conv_read_failed_body">连接正常，但这段历史读取出错。下拉重试一次。</string>
+    <string name="conv_offline_title">连接断开</string>
+    <string name="conv_offline_body">手机断线不会主动停止已提交的任务；电脑与 Harness 正常运行时任务会继续。重新连接后更新进度。</string>
+    <string name="conv_placeholder">发消息或创建任务…</string>
+    <string name="conv_send">发送</string>
+    <string name="conv_stop">停止</string>
+
+    <!-- 新建任务 -->
+    <string name="new_task_title">新建任务</string>
+    <string name="new_task_body">描述你想让它做什么。它会在这台电脑的会话工作区里执行，涉及写文件时会等你确认。</string>
+    <string name="new_task_label">任务描述</string>
+    <string name="new_task_placeholder">例如：整理下载目录中的 PDF，先给我分类预览</string>
+    <string name="new_task_how">执行方式</string>
+    <string name="new_task_workspace">工作区</string>
+    <string name="new_task_mode">模式</string>
+    <string name="new_task_tools">工具授权</string>
+    <string name="new_task_tools_value">自动审查 · 写操作需确认</string>
+    <string name="new_task_start">开始</string>
+
+    <!-- 6 · 审批 -->
+    <string name="appr_title">待审批</string>
+    <string name="appr_empty_title">没有待处理的请求</string>
+    <string name="appr_empty_body">需要你确认时，这里会显示，同时电脑上也会有提示。</string>
+    <string name="appr_submit_failed_title">审批提交失败</string>
+    <string name="appr_submit_failed_body">你的选择可能没有送达电脑。请重新查看这条请求再决定。</string>
+    <string name="appr_offline_title">暂时连不上</string>
+    <string name="appr_offline_body">下面是你断开前看到的请求。电脑上的任务会停在这一步等你，不会自动放行。</string>
+    <string name="appr_requested_action">请求的操作</string>
+    <string name="appr_impact">影响</string>
+    <string name="appr_impact_pending">影响分析尚未接入。接真实后端前，这里只显示请求原文，请自行判断。</string>
+    <string name="appr_show_command">展开原始命令</string>
+    <string name="appr_hide_command">收起原始命令</string>
+    <string name="appr_source">来源</string>
+    <string name="appr_computer">电脑</string>
+    <string name="appr_task">任务</string>
+    <string name="appr_requested_at">请求时间</string>
+    <string name="appr_deny">拒绝</string>
+    <string name="appr_allow_once">允许一次</string>
+    <string name="appr_once_title">只允许这一次</string>
+    <string name="appr_once_body">下次同类操作还会再问你。想要少打扰，可以在设置的「工具授权」里调整，但写操作建议保留确认。</string>
+    <string name="appr_allowed_title">已提交，等待电脑确认</string>
+    <string name="appr_allowed_body">决定已提交，正在等待电脑确认。确认后任务才会继续；这里会显示确认结果。</string>
+    <string name="appr_view_task">查看任务</string>
+
+    <!-- 7 · 设置 -->
+    <string name="settings_current_computer">当前电脑</string>
+    <string name="settings_name">名称</string>
+    <string name="settings_status">状态</string>
+    <string name="settings_identity">电脑身份</string>
+    <string name="settings_auth">授权</string>
+    <string name="settings_auth_value">独立设备授权 · 可随时撤销</string>
+    <string name="settings_revoke">断开并撤销本机授权</string>
+    <string name="settings_notify">提醒</string>
+    <string name="settings_notify_done">任务完成时提醒</string>
+    <string name="settings_notify_approval">需要审批时提醒</string>
+    <string name="settings_notify_on">开</string>
+    <string name="settings_notify_strong">开（强烈建议）</string>
+    <string name="settings_notify_note">提醒只包含「有任务需要处理」这类最小信息，不含命令内容和文件路径。详细内容需要打开 App 查看。</string>
+    <string name="settings_security">安全</string>
+    <string name="settings_lock">打开时要求解锁</string>
+    <string name="settings_lock_note">手机上的授权凭据存在系统密钥库中，不随普通备份导出。</string>
+    <string name="settings_advanced">高级诊断</string>
+    <string name="settings_network">网络与连接</string>
+    <string name="settings_network_hint">地址、隧道、唤醒配置</string>
+    <string name="settings_about">关于</string>
+    <string name="settings_version">版本</string>
+    <string name="settings_license">开源许可</string>
+    <string name="settings_data_note_title">你的数据不在这台手机上</string>
+    <string name="settings_data_note_body">任务、对话和文件都在对应的电脑上。手机只保存电脑身份、授权凭据和少量缓存。</string>
+
+    <!-- 诊断 -->
+    <string name="diag_title">网络与连接</string>
+    <string name="diag_address">地址</string>
+    <string name="diag_transport">连接方式</string>
+    <string name="diag_transport_relay">隧道（中继）</string>
+    <string name="diag_transport_direct">直连</string>
+    <string name="diag_last_handshake">最近握手</string>
+    <string name="diag_protocol">协议版本</string>
+    <string name="diag_wake">唤醒</string>
+    <string name="diag_wake_relay">唤醒中继</string>
+    <string name="diag_wake_none">未配置</string>
+    <string name="diag_wake_note">当前电脑休眠后，无法从外网唤醒。需要在局域网里放一台常开设备（树莓派、NAS 或路由器）作为唤醒中继。</string>
+    <string name="diag_wake_configure">配置唤醒中继</string>
+    <string name="diag_info">诊断信息</string>
+    <string name="diag_app_version">手机端版本</string>
+    <string name="diag_host_version">电脑端版本</string>
+    <string name="diag_cache">缓存占用</string>
+    <string name="diag_clear_cache">清空缓存</string>
+
+    <!-- 唤醒配置：从旧首页迁入，逻辑复用既有实现 -->
+    <string name="wake_title">唤醒配置</string>
+    <string name="wake_mac">电脑网卡 MAC 地址</string>
+    <string name="wake_mac_hint">在电脑上执行 networksetup -getMACAddress Wi-Fi。注意关掉「私有 Wi-Fi 地址」，否则这里填的是硬件 MAC、而实际用的是随机 MAC。</string>
+    <string name="wake_broadcast">广播地址</string>
+    <string name="wake_broadcast_hint">例如 192.168.1.255。magic packet 跨不了路由器，所以这条只在手机与电脑同一子网时有效。</string>
+    <string name="wake_relay">唤醒中继地址（优先）</string>
+    <string name="wake_relay_hint">局域网里一台常开设备上的 wol-bridge，例如 http://192.168.1.9:8787。配了它就能从外网唤醒。</string>
+    <string name="wake_relay_token">中继凭据</string>
+    <string name="wake_save">保存唤醒配置</string>
+    <string name="wake_saved">已保存</string>
+    <string name="wake_send">发送唤醒请求</string>
+    <string name="wake_sending">正在发送…</string>
+    <string name="wake_sent">唤醒请求已发送，等待电脑上线</string>
+    <string name="wake_invalid_mac">MAC 地址格式不正确，应为 aa:bb:cc:dd:ee:ff</string>
+    <string name="wake_invalid_broadcast">广播地址格式不正确</string>
+    <string name="wake_invalid_relay">中继地址需要以 http:// 或 https:// 开头</string>
+    <string name="wake_nothing_configured">还没有配置。填中继地址，或者填 MAC 与广播地址。</string>
+    <string name="wake_plan_relay">将通过中继发送，从任何网络都可用</string>
+    <string name="wake_plan_broadcast">将向本地网络广播，只在手机与电脑同一网络时有效</string>
+
+    <!-- 演示数据标注 -->
+    <string name="demo_banner_title">这是界面预览，不是真实数据</string>
+    <string name="demo_banner_body">下面显示的是示例内容。连接电脑后，这里会换成该电脑上的真实数据。</string>
+    <string name="demo_banner_short">界面预览 · 示例数据</string>
+    <string name="demo_value">示例</string>
+    <string name="demo_not_connected">未接入</string>
+
+    <!-- 会话详情 -->
+    <string name="detail_title">任务详情</string>
+    <string name="detail_elapsed">已用时</string>
+    <string name="detail_model">模型</string>
+    <string name="detail_artifacts">产物</string>
+    <string name="detail_artifact_note">首期只显示摘要和预览。完整文件在电脑上查看。</string>
+    <string name="detail_actions">操作</string>
+    <string name="detail_stop">停止任务</string>
+
 </resources>

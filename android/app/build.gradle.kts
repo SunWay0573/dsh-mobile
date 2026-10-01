@@ -68,4 +68,17 @@ dependencies {
     debugImplementation(libs.androidx.ui.tooling)
 
     testImplementation(libs.junit)
+
+    // On-device tests. The WebView behaviour that WP1 changed -- a late
+    // onPageFinished erasing a failure, a changed URL not navigating -- cannot
+    // be observed from the JVM at all, because there is no WebView there.
+    androidTestImplementation(libs.androidx.test.ext.junit)
+    androidTestImplementation(libs.androidx.test.runner)
+    androidTestImplementation(libs.androidx.test.core)
+    // Compose UI assertions: the screens under test are Compose, so Espresso's
+    // view matchers cannot see them.
+    androidTestImplementation(platform(libs.androidx.compose.bom))
+    androidTestImplementation(libs.androidx.ui.test.junit4)
+    // Supplies the empty activity the compose test rule launches into.
+    debugImplementation(libs.androidx.ui.test.manifest)
 }

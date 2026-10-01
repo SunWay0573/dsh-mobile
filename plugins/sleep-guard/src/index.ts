@@ -170,7 +170,13 @@ export function apply(ctx: Context, config: Config): void {
         }
       }
       try {
-        await assertion.release()
+        // `dispose` rather than `release`: a release is a pause that work may
+        // end, and an acquire deferred during one is taken as soon as the drain
+        // finishes. At teardown there is nothing left to take it back, so the
+        // deferred request must be dropped -- otherwise a plugin that is
+        // unloading spawns a `caffeinate` nobody owns, which is exactly the
+        // leaked assertion this design exists to make impossible.
+        await assertion.dispose()
       } catch (error) {
         ctx.logger.warn(`sleep-guard: final release failed: ${describe(error)}`)
       }

@@ -42,6 +42,15 @@ internal object DeepLinks {
         val pathOnly = rest.substringBefore('?').substringBefore('#')
 
         val segments = pathOnly.split('/').filter { it.isNotEmpty() }
+
+        // The multi-computer format is not this one, and reading it as this one
+        // is worse than not reading it at all: `computer/<id>/session/<sid>`
+        // would yield the literal string "computer" as a session id, and the app
+        // would then try to open a session by that name on whichever computer it
+        // had. Caught by a test rather than by a user, which is the point of
+        // having both formats covered in the same file.
+        if (segments.firstOrNull()?.equals("computer", ignoreCase = true) == true) return null
+
         val afterSession = when {
             // dshmobile://session/<id>
             segments.firstOrNull()?.equals("session", ignoreCase = true) == true -> segments.drop(1)
@@ -69,4 +78,57 @@ internal object DeepLinks {
         val normalised = Urls.normalize(base).trimEnd('/')
         return "$normalised/#/session/${java.net.URLEncoder.encode(sessionId, "UTF-8")}"
     }
+
+    /**
+     * Parse the multi-computer deep link: `dshmobile://computer/<id>/session/<sid>`.
+     *
+     * ## Why there is no fallback
+     *
+     * When the computer id is not recognised, this returns null and the caller
+     * must send the user to pairing. The tempting alternative — "we only have one
+     * computer, so it must be that one" — is exactly the bug this format exists
+     * to prevent: a notification from a computer that has since been removed, or
+     * from one paired on a different phone, would open a session on whichever
+     * machine happens to be first in the list. On a single-computer setup the two
+     * behaviours are indistinguishable, which is why the mistake survives testing
+     * and only shows up after someone pairs a second machine.
+     *
+     * The single-host form (`dshmobile://session/<id>`) is still accepted by
+     * [sessionId] for links already sitting in notification trays, and is
+     * resolved to the only computer at the call site — not here, where the
+     * computer list is not available.
+     *
+     * @param uri the incoming URI; null when there was none.
+     * @returns the target, or null when this is not a multi-computer link or the
+     *   id is missing. The caller decides whether the id is known.
+     */
+    fun computerTarget(uri: String?): MobileTargetParts? {
+        if (uri == null) return null
+        val trimmed = uri.trim()
+        if (!trimmed.startsWith("$SCHEME://", ignoreCase = true)) return null
+
+        val rest = trimmed.substring(SCHEME.length + 3)
+        val path = rest.substringBefore('?').substringBefore('#')
+        val segments = path.split('/').filter { it.isNotEmpty() }
+
+        // computer/<id>/session/<sid>
+        if (segments.size < 4) return null
+        if (!segments[0].equals("computer", ignoreCase = true)) return null
+        if (!segments[2].equals("session", ignoreCase = true)) return null
+
+        val computerId = decode(segments[1])
+        val sessionId = decode(segments[3])
+        if (computerId.isEmpty() || sessionId.isEmpty()) return null
+        return MobileTargetParts(computerId, sessionId)
+    }
+
+    private fun decode(value: String): String =
+        runCatching { java.net.URLDecoder.decode(value, "UTF-8") }.getOrDefault(value)
 }
+
+/**
+ * The two ids from a multi-computer deep link, before anyone has checked that
+ * the computer is one this phone knows. Kept separate from `MobileTarget`, which
+ * refuses to exist for an unpaired computer.
+ */
+internal data class MobileTargetParts(val computerId: String, val sessionId: String)

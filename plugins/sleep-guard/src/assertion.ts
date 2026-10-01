@@ -74,6 +74,15 @@ export class SleepAssertion {
   #child: ChildLike | undefined
   #holdTimer: NodeJS.Timeout | undefined
   #releasing: Promise<void> | undefined
+  /**
+   * An acquire that arrived while a release was draining.
+   *
+   * Recorded rather than dropped. See {@link acquire} for why the difference
+   * matters: dropping it can leave running work with no assertion at all.
+   */
+  #acquirePending = false
+  /** Set by {@link dispose}. No further child is ever spawned after this. */
+  #disposed = false
 
   /**
    * @param options.command - executable to run, e.g. `caffeinate`.
@@ -125,11 +134,21 @@ export class SleepAssertion {
    * load is worse than one that cannot hold an assertion.
    */
   acquire(): void {
+    if (this.#disposed) return
     if (this.#child !== undefined) return
     if (this.#releasing !== undefined) {
-      // A release is still draining. Let it finish; the next update() from the
-      // host will re-acquire if work is genuinely still running.
-      this.#onWarn('acquire while a release is still draining; skipping')
+      // A release is still draining. The old child is being killed, so a second
+      // process must not be spawned yet -- but the request must not be thrown
+      // away either.
+      //
+      // An earlier version simply returned, on the theory that "the next
+      // update() from the host will re-acquire". There may not be a next
+      // update: the host recomputes on events, and if work resumed during the
+      // drain then stopped producing events, the busy state stays true and
+      // nothing re-acquires. The machine then sleeps under running work, which
+      // is the one outcome this whole component exists to prevent.
+      this.#acquirePending = true
+      this.#onInfo('acquire requested while a release is draining; deferring')
       return
     }
 
@@ -193,8 +212,33 @@ export class SleepAssertion {
     }
     this.#releasing = this.#kill(child).finally(() => {
       this.#releasing = undefined
+      // Work asked to be kept awake while the old child was still dying. Take
+      // the assertion now, in the same turn the drain ends, so there is no
+      // window where the machine is free to sleep.
+      if (this.#acquirePending && !this.#disposed) {
+        this.#acquirePending = false
+        this.acquire()
+      }
     })
     return this.#releasing
+  }
+
+  /**
+   * Stop for good: drop anything pending and release what is held.
+   *
+   * Separate from {@link release} because a release is a pause -- work may
+   * resume and the assertion comes back. A dispose is the end of the plugin,
+   * and a deferred acquire that survived it would spawn a process nothing is
+   * left to kill, which is precisely the leaked assertion this class is shaped
+   * to make impossible.
+   *
+   * Idempotent, and safe to call while a release is draining: it clears the
+   * pending flag, so the drain's completion check finds nothing to do.
+   */
+  async dispose(): Promise<void> {
+    this.#disposed = true
+    this.#acquirePending = false
+    await this.release()
   }
 
   async #kill(child: ChildLike): Promise<void> {

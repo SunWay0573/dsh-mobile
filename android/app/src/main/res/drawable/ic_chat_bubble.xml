@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Material Symbols Rounded, 24dp, monochrome — 与电脑智能体的任务会话.
+
+  Downloaded as SVG from google/material-design-icons and converted here rather
+  than depending on material-icons-extended: that package is tens of megabytes
+  and hundreds of icons to obtain three, and it ships an icon set that does not
+  match the Rounded style the rest of this design uses.
+
+  The source viewBox is "0 -960 960 960", so the path coordinates are negative
+  in y. Android vector viewports start at 0, hence the translateY group. Without
+  it the icon renders empty, which looks like a missing resource rather than a
+  coordinate bug.
+
+  Tint comes from the caller; the fill colour below is a placeholder that
+  `Icon` overrides with its `tint`.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="960"
+    android:viewportHeight="960">
+    <group android:translateY="960">
+        <path
+            android:fillColor="#FF000000"
+            android:pathData="m240-240-92 92q-19 19-43.5 8.5T80-177v-623q0-33 23.5-56.5T160-880h640q33 0 56.5 23.5T880-800v480q0 33-23.5 56.5T800-240H240Zm-34-80h594v-480H160v525l46-45Zm-46 0v-480 480Z" />
+    </group>
+</vector>

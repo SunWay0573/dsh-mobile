@@ -2,6 +2,7 @@ package io.github.sunway0573.dshmobile
 
 import android.annotation.SuppressLint
 import android.content.Intent
+import android.graphics.Bitmap
 import android.os.Bundle
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
@@ -43,6 +44,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.core.view.WindowCompat
+import io.github.sunway0573.dshmobile.mobile.ui.MobileApp
+import io.github.sunway0573.dshmobile.mobile.ui.UiState
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.Lifecycle
@@ -80,6 +84,18 @@ class MainActivity : FragmentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         pendingSession.value = DeepLinks.sessionId(intent?.data?.toString())
+
+        // `targetSdk 35` draws edge to edge, so the app owns the area behind the
+        // status bar. The bars' icons default to light, which on this light
+        // background is white-on-white — the clock and battery were unreadable
+        // in the first device screenshots. Asking for dark icons fixes the
+        // contrast; insetting the content fixes the overlap. Doing only one of
+        // the two leaves the other problem.
+        WindowCompat.getInsetsController(window, window.decorView)
+            .isAppearanceLightStatusBars = true
+        WindowCompat.getInsetsController(window, window.decorView)
+            .isAppearanceLightNavigationBars = true
+
         val activity = this
         setContent {
             MaterialTheme {
@@ -185,8 +201,125 @@ private const val WEBVIEW_HEIGHT_FIX = """
 })();
 """
 
+/**
+ * Temporary overlay layout for the desktop sidebar on a phone.
+ *
+ * ## The problem, measured on the device
+ *
+ * Below 1024px DSH collapses the sidebar to a 56px rail, and hiding the right
+ * bar gives the conversation a usable 334px. **Expanding** the sidebar is what
+ * breaks: the column solver hands it its 264px minimum, leaving about 110px for
+ * the conversation, and Chinese text wraps to one character per line. Screenshot
+ * from a Redmi Note 15 Pro at 394dp: `evidence/05-session-navigation.png`.
+ *
+ * ## Why this is a bounded patch and not a redesign
+ *
+ * Navigation should not squeeze the content it navigates — on a phone the
+ * sidebar belongs *over* the conversation, not beside it. That is a one-rule
+ * change, so it is done here and stops here.
+ *
+ * This is explicitly a stopgap for the author's own use. It patches someone
+ * else's DOM through CSS-module class fragments, which is fragile by nature, and
+ * it will be deleted when the native mobile interface lands rather than grown.
+ * Do not add further rules to it.
+ */
+private const val MOBILE_LAYOUT_FIX = """
+(function () {
+  var id = 'dsh-mobile-layout';
+  if (document.getElementById(id)) return 'already-applied';
+
+  var style = document.createElement('style');
+  style.id = id;
+  style.textContent = [
+    '@media (max-width: 600px) {',
+    // Expanded sidebar: give it no grid column at all, so the conversation keeps
+    // the full width behind it.
+    '  [class*="_frame"]:not([data-sidebar-collapsed]) {',
+    '    grid-template-columns: 0 minmax(0, 1fr) 0 !important;',
+    '  }',
+    // ...and float the sidebar on top instead.
+    '  [class*="_frame"]:not([data-sidebar-collapsed]) [class*="_sidebarCol"] {',
+    '    position: absolute !important;',
+    '    top: 0; bottom: 0; left: 0;',
+    '    width: min(86vw, 360px) !important;',
+    '    z-index: 40;',
+    '    background: var(--dsw-alias-bg-base, Canvas);',
+    '    box-shadow: 0 8px 32px rgb(0 0 0 / 0.18);',
+    '  }',
+    '}'
+  ].join('\n');
+  (document.head || document.documentElement).appendChild(style);
+  return 'applied';
+})()
+"""
+
+/**
+ * Asks the page whether the DSH client actually mounted.
+ *
+ * `onPageFinished` means the document finished loading. It says nothing about
+ * whether the scripts inside it ran — and it fires just as happily for the error
+ * page a 403 renders. Reporting ready on that basis is how a user ends up on a
+ * blank screen with the app insisting everything is fine.
+ *
+ * The shell element is the check rather than `#root` having children, because
+ * the boot placeholder also renders into `#root`: it is present on a page whose
+ * client never started, which is exactly the state being tested for.
+ */
+private const val CLIENT_MOUNT_PROBE = """
+(function () {
+  var root = document.getElementById('root');
+  if (!root || root.children.length === 0) return false;
+  return !!document.querySelector('[class*="_frame"]');
+})()
+"""
+
+/** How many times to ask before deciding the client is not coming. */
+private const val MOUNT_PROBE_ATTEMPTS = 12
+
+/** Gap between probes: 12 x 400ms is about five seconds, generous for a cold load. */
+private const val MOUNT_PROBE_INTERVAL_MS = 400L
+
+/**
+ * Poll the page until the client has mounted, or give up and say so.
+ *
+ * Give up loudly rather than silently: "the page loaded but the application did
+ * not start" is a different problem from "the host is unreachable", and the two
+ * need different actions from the user.
+ *
+ * @param view the WebView to ask.
+ * @param load the current load's outcome, so a failure reported while probing is
+ *   not overwritten by this probe's answer.
+ * @param onState where to report.
+ * @param attempt how many probes have already run.
+ */
+private fun probeClientStart(
+    view: WebView,
+    load: SessionLoad,
+    onState: (WebState) -> Unit,
+    attempt: Int,
+) {
+    view.evaluateJavascript(CLIENT_MOUNT_PROBE) { result ->
+        // This load already failed (an HTTP error arrived mid-probe); that
+        // verdict stands and is more informative than anything here.
+        if (!load.mayReportReady()) return@evaluateJavascript
+
+        if (result == "true") {
+            onState(WebState.Ready)
+            return@evaluateJavascript
+        }
+        if (attempt >= MOUNT_PROBE_ATTEMPTS) {
+            onState(WebErrors.forClientDidNotStart())
+            return@evaluateJavascript
+        }
+        view.postDelayed(
+            { probeClientStart(view, load, onState, attempt + 1) },
+            MOUNT_PROBE_INTERVAL_MS,
+        )
+    }
+}
+
 /** Which screen is showing. */
-private enum class Screen { Home, Session }
+private enum class Screen { Home, LegacyHome, Session }
 
 @Composable
 private fun DshMobileApp(
@@ -236,8 +369,22 @@ private fun DshMobileApp(
         }
     }
 
+    // 手机端界面现在是默认入口。原来的网页界面降级为诊断页里的调试入口——
+    // 它展示的是桌面布局，而且用的是宿主自己的 Cookie，不属于独立设备授权。
+    // 按计划，独立设备授权版本落地时这个入口会被彻底移除。
     when (screen) {
-        Screen.Home -> HomeScreen(
+        Screen.Home -> MobileApp(
+            state = UiState.NORMAL,
+            wakeConfig = settings.wakeConfig,
+            onSaveWakeConfig = { settings.saveWakeConfig(it) },
+            onOpenLegacyWebView = {
+                sessionTarget = ""
+                webState = WebState.Loading
+                screen = Screen.Session
+            },
+        )
+
+        Screen.LegacyHome -> HomeScreen(
             hostUrl = hostUrl,
             onHostUrlChange = { hostUrl = it },
             wakeMac = wakeMac,
@@ -496,6 +643,11 @@ private fun SessionScreen(
     // the first `onState` forever and write into a stale closure.
     val reportState by rememberUpdatedState(onState)
     val reportCreated by rememberUpdatedState(onCreated)
+    // One load's outcome, shared by the callbacks below. Without it a late
+    // `onPageFinished` overwrites the failure that `onReceivedHttpError` just
+    // reported, and the user is left on the host's error page while the app
+    // insists everything is fine.
+    val load = remember { SessionLoad() }
 
     // `targetSdk 35` means Android 15+ draws the app edge to edge whether it asks
     // to or not, so without this the DSH UI's top row sits underneath the status
@@ -541,11 +693,28 @@ private fun SessionScreen(
                     // changed nothing.
                     settings.useWideViewPort = true
                     webViewClient = object : WebViewClient() {
+                        override fun onPageStarted(
+                            view: WebView,
+                            startedUrl: String?,
+                            favicon: Bitmap?,
+                        ) {
+                            load.started()
+                        }
+
                         override fun onPageFinished(view: WebView, loadedUrl: String?) {
                             // See WEBVIEW_HEIGHT_FIX. Re-applied on every load,
                             // because a reload produces the same collapsed layout.
                             view.evaluateJavascript(WEBVIEW_HEIGHT_FIX, null)
-                            reportState(WebState.Ready)
+                            view.evaluateJavascript(MOBILE_LAYOUT_FIX, null)
+
+                            // A finished page is not a working application. This
+                            // callback also fires for the error page a 403 renders,
+                            // and for a page whose scripts then throw.
+                            if (!load.mayReportReady()) return
+
+                            // So ask the page whether the client actually came up,
+                            // rather than inferring it from the document finishing.
+                            probeClientStart(view, load, reportState, attempt = 0)
                         }
 
                         override fun onReceivedError(
@@ -554,11 +723,8 @@ private fun SessionScreen(
                             error: WebResourceError,
                         ) {
                             if (!request.isForMainFrame) return
-                            reportState(
-                                WebState.Failed(
-                                    WebErrors.forNetworkError(error.description.toString()),
-                                ),
-                            )
+                            load.failed()
+                            reportState(WebErrors.forTransport(error.description.toString()))
                         }
 
                         override fun onReceivedHttpError(
@@ -571,16 +737,29 @@ private fun SessionScreen(
                             // that is working because one of them 404s would be
                             // worse than saying nothing.
                             if (!request.isForMainFrame) return
-                            WebErrors.forHttpStatus(response.statusCode)
-                                ?.let { reportState(WebState.Failed(it)) }
+                            WebErrors.forStatus(response.statusCode)?.let {
+                                load.failed()
+                                reportState(it)
+                            }
                         }
                     }
-                    loadUrl(Urls.normalize(url))
                     webView = this
                     reportCreated(this)
                 }
             },
         )
+
+        // One place loads the URL, so a *changed* url navigates the WebView that
+        // already exists. The factory used to call `loadUrl` itself, which meant
+        // a notification tap arriving while this screen was already composed set
+        // a new target that nothing ever acted on -- the tap appeared to do
+        // nothing at all.
+        LaunchedEffect(url, webView) {
+            val view = webView ?: return@LaunchedEffect
+            load.started()
+            reportState(WebState.Loading)
+            view.loadUrl(Urls.normalize(url))
+        }
     }
 
     // A tunnel that was down when the app went to the background is very often
@@ -588,9 +767,15 @@ private fun SessionScreen(
     // recovery; what it cannot do is notice that the page never loaded in the
     // first place.
     val lifecycleOwner = LocalLifecycleOwner.current
+    // `state` is a plain parameter, so an effect keyed only on the lifecycle
+    // owner captures whatever it was at the first composition -- `Loading` --
+    // and the check below then never fires again. This app has been bitten by
+    // the same stale-closure shape three times; `rememberUpdatedState` is the
+    // fix each time.
+    val currentState by rememberUpdatedState(state)
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME && state is WebState.Failed) {
+            if (event == Lifecycle.Event.ON_RESUME && currentState is WebState.Failed) {
                 webView?.reload()
             }
         }

@@ -8,6 +8,12 @@ composeBom = "2024.10.01"
 webkit = "1.12.1"
 biometric = "1.1.0"
 junit = "4.13.2"
+# Instrumentation. These run on a device, which is the only place a real
+# WebView exists. The JVM tests cover the decision logic; they cannot tell
+# whether the app drives that logic correctly.
+androidxTestJunit = "1.2.1"
+androidxTestRunner = "1.6.2"
+androidxTestCore = "1.6.1"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -24,6 +30,11 @@ androidx-webkit = { group = "androidx.webkit", name = "webkit", version.ref = "w
 # FragmentActivity comes in transitively with this, which BiometricPrompt requires.
 androidx-biometric = { group = "androidx.biometric", name = "biometric", version.ref = "biometric" }
 junit = { group = "junit", name = "junit", version.ref = "junit" }
+androidx-test-ext-junit = { group = "androidx.test.ext", name = "junit", version.ref = "androidxTestJunit" }
+androidx-test-runner = { group = "androidx.test", name = "runner", version.ref = "androidxTestRunner" }
+androidx-test-core = { group = "androidx.test", name = "core", version.ref = "androidxTestCore" }
+androidx-ui-test-junit4 = { group = "androidx.compose.ui", name = "ui-test-junit4" }
+androidx-ui-test-manifest = { group = "androidx.compose.ui", name = "ui-test-manifest" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
