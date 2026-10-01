@@ -54,3 +54,17 @@ and a local run cannot disagree about what "passing" means:
 The integration job is the one that matters. It is the only check that can see a
 plugin which installs cleanly, typechecks, passes every unit test, and never
 runs — which has happened in this repository three times.
+
+### Measured on a cold cache
+
+The integration job caches `~/.cache/dsh-e2e-cli`, so its first run downloads the
+DSH CLI. That path is the one CI actually takes first and the one a warm local
+checkout never exercises, so it was run deliberately with the cache removed:
+
+| | |
+|---|---|
+| Cold (empty cache) | **3m 19s**, all checks pass |
+| Warm | about 1m |
+
+The cached directory is ~495 MB, which is mostly the CLI's `node_modules`. The
+cache trades roughly a minute, so it is worth keeping but not worth defending.
