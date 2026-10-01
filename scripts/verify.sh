@@ -137,6 +137,26 @@ if selected hygiene; then
   # A broken relative link is invisible in review and invisible in a rendered
   # diff: the text still reads correctly, and the reader is the one who finds
   # out. This project cross-references a lot on purpose.
+  # A CRLF in an executable script is invisible in a diff and produces
+  # "/usr/bin/env: 'bash\r': No such file or directory", which reads like a
+  # missing interpreter. .gitattributes is what prevents it being committed;
+  # this is what catches it if someone overrides that with core.autocrlf.
+  crlf_files=""
+  while IFS= read -r tracked; do
+    case "$tracked" in
+      *.sh|*.py|*.mjs|*/gradlew)
+        if [ -f "$tracked" ] && LC_ALL=C grep -qU $'\r' "$tracked" 2>/dev/null; then
+          crlf_files="$crlf_files $tracked"
+        fi ;;
+    esac
+  done < <(git ls-files)
+  if [[ -n "$crlf_files" ]]; then
+    bad "scripts contain CRLF line endings:$crlf_files"
+  else
+    ok "scripts have no CRLF line endings"
+  fi
+
+
   if command -v node >/dev/null 2>&1; then
     run "relative documentation links resolve" node scripts/check-links.mjs
     # Offline only. Whether an action version exists is a network question, and

@@ -1,0 +1,48 @@
+# Line endings, decided once rather than per-contributor.
+#
+# This repository is Unix-targeted: five tracked files are executable scripts,
+# and a CRLF in any of them produces
+#
+#   /usr/bin/env: 'bash\r': No such file or directory
+#
+# which reads like a missing interpreter and is actually an invisible carriage
+# return. Without this file the outcome depends on each contributor's
+# core.autocrlf, so the same commit is fine on one machine and broken on another.
+#
+# `text=auto` normalises on the way in and lets Git decide what is text. The
+# explicit rules below are for the cases where that guess matters.
+
+* text=auto eol=lf
+
+# Executable scripts: LF, always. A CRLF here breaks the shebang.
+*.sh            text eol=lf
+*.py            text eol=lf
+*.mjs           text eol=lf
+gradlew         text eol=lf
+*.service       text eol=lf
+
+# Windows-only entry points must keep CRLF, or cmd.exe mis-parses them.
+*.bat           text eol=crlf
+*.cmd           text eol=crlf
+
+# Binaries. `text=auto` usually detects these, but a jar or an APK that gets
+# treated as text is corrupted by the first normalisation, silently, and only
+# discovered when something tries to open it.
+*.jar           binary
+*.apk           binary
+*.aab           binary
+*.png           binary
+*.jpg           binary
+*.webp          binary
+*.keystore      binary
+*.jks           binary
+
+# Lockfiles are generated but reviewed in diffs, and merging them is a real
+# event. Not hidden from the diff, and not stat-normalised.
+pnpm-lock.yaml  -diff merge=text
+package-lock.json -diff merge=text
+
+# The Gradle wrapper jar is committed on purpose -- it pins the build tool for
+# everyone, which is the point -- but it is not source, and counting it in the
+# language breakdown tells a reader nothing.
+gradle/wrapper/gradle-wrapper.jar linguist-generated=true binary
