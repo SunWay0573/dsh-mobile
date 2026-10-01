@@ -68,6 +68,10 @@ dependencies {
     debugImplementation(libs.androidx.ui.tooling)
 
     testImplementation(libs.junit)
+    // The real org.json, not Android's stub. Without it every test that touches
+    // a JSONObject fails with "not mocked", which pushes protocol parsing into
+    // instrumentation tests where it is slower and harder to cover.
+    testImplementation(libs.orgjson)
 
     // On-device tests. The WebView behaviour that WP1 changed -- a late
     // onPageFinished erasing a failure, a changed URL not navigating -- cannot

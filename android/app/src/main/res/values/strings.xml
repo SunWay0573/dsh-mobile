@@ -180,6 +180,11 @@
     <string name="diag_transport_direct">直连</string>
     <string name="diag_last_handshake">最近握手</string>
     <string name="diag_protocol">协议版本</string>
+    <string name="diag_computer">电脑</string>
+    <string name="diag_adapter_version">适配器版本</string>
+    <string name="diag_capabilities">可用操作</string>
+    <string name="diag_unavailable">不可用操作</string>
+    <string name="diag_incompatible">版本不兼容</string>
     <string name="diag_wake">唤醒</string>
     <string name="diag_wake_relay">唤醒中继</string>
     <string name="diag_wake_none">未配置</string>

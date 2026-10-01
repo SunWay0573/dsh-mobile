@@ -27,6 +27,7 @@ import io.github.sunway0573.dshmobile.R
 import io.github.sunway0573.dshmobile.Wake
 import io.github.sunway0573.dshmobile.WakeOnLan
 import io.github.sunway0573.dshmobile.WakePlan
+import io.github.sunway0573.dshmobile.mobile.repository.ComputerState
 import kotlinx.coroutines.launch
 
 @Composable
@@ -129,6 +130,7 @@ internal fun SettingsScreen(
  */
 @Composable
 internal fun DiagnosticsScreen(
+    computerState: ComputerState,
     onBack: () -> Unit,
     onOpenLegacyWebView: () -> Unit,
     wakeConfig: WakeConfig = WakeConfig(),
@@ -143,11 +145,69 @@ internal fun DiagnosticsScreen(
         Column(Modifier.padding(horizontal = 12.dp)) {
             DemoBanner()
 
+            // These come from the negotiation, not from a placeholder. The
+            // difference matters: "协议版本 1" written by hand proves nothing,
+            // while a value the adapter actually sent is evidence the handshake
+            // ran — and a mismatch here is what the incompatible screen reports.
             MobileCard {
-                KeyValue(stringResource(R.string.diag_address), stringResource(R.string.demo_value))
-                KeyValue(stringResource(R.string.diag_transport), stringResource(R.string.demo_not_connected))
-                KeyValue(stringResource(R.string.diag_last_handshake), stringResource(R.string.demo_not_connected))
-                KeyValue(stringResource(R.string.diag_protocol), stringResource(R.string.demo_value))
+                when (computerState) {
+                    is ComputerState.Connected -> {
+                        KeyValue(stringResource(R.string.diag_computer), computerState.computerName)
+                        KeyValue(stringResource(R.string.diag_protocol), "1")
+                        KeyValue(stringResource(R.string.diag_host_version), computerState.hostVersion)
+                        KeyValue(stringResource(R.string.diag_adapter_version), computerState.adapterVersion)
+                        KeyValue(
+                            stringResource(R.string.diag_capabilities),
+                            computerState.available.size.toString(),
+                        )
+                        KeyValue(
+                            stringResource(R.string.diag_unavailable),
+                            computerState.unavailable.size.toString(),
+                        )
+                    }
+
+                    is ComputerState.Offline -> {
+                        KeyValue(
+                            stringResource(R.string.settings_status),
+                            stringResource(R.string.common_offline),
+                            Tone.WARN,
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            computerState.detail,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MobileColors.Muted,
+                        )
+                    }
+
+                    is ComputerState.Incompatible -> {
+                        KeyValue(
+                            stringResource(R.string.settings_status),
+                            stringResource(R.string.diag_incompatible),
+                            Tone.ERR,
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            computerState.message,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MobileColors.Err,
+                        )
+                    }
+
+                    is ComputerState.Failed -> {
+                        KeyValue(
+                            stringResource(R.string.settings_status),
+                            stringResource(R.string.demo_not_connected),
+                            Tone.ERR,
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            computerState.detail,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MobileColors.Muted,
+                        )
+                    }
+                }
             }
 
             SectionHeader(stringResource(R.string.diag_wake))

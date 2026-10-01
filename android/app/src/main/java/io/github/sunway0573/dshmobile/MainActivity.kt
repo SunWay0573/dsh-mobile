@@ -45,6 +45,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowCompat
+import io.github.sunway0573.dshmobile.mobile.protocol.ComputerStatus
+import io.github.sunway0573.dshmobile.mobile.protocol.MobileProtocol
+import io.github.sunway0573.dshmobile.mobile.protocol.Operation
+import io.github.sunway0573.dshmobile.mobile.protocol.Scope
+import io.github.sunway0573.dshmobile.mobile.repository.ComputerState
+import io.github.sunway0573.dshmobile.mobile.repository.SessionRepository
+import io.github.sunway0573.dshmobile.mobile.transport.FixtureTransport
+import io.github.sunway0573.dshmobile.mobile.transport.TransportResult
 import io.github.sunway0573.dshmobile.mobile.ui.MobileApp
 import io.github.sunway0573.dshmobile.mobile.ui.UiState
 import androidx.compose.ui.viewinterop.AndroidView
@@ -372,9 +380,36 @@ private fun DshMobileApp(
     // 手机端界面现在是默认入口。原来的网页界面降级为诊断页里的调试入口——
     // 它展示的是桌面布局，而且用的是宿主自己的 Cookie，不属于独立设备授权。
     // 按计划，独立设备授权版本落地时这个入口会被彻底移除。
+    // 协商结果驱动界面状态。
+    //
+    // 目前背后是一个固定装置：真实传输属于工作包3 的下一段。但这条路径本身是真的——
+    // 状态由 MobileAdapter 的应答经 negotiate() 算出，而不是写死的 UiState.NORMAL。
+    // 诊断页显示的版本号和能力数就来自这里，所以如果协商逻辑坏了，它会显示出来，
+    // 而不是继续显示一个好看的数字。
+    var negotiated by remember { mutableStateOf<ComputerState>(ComputerState.Offline("尚未连接")) }
+    val repository = remember {
+        SessionRepository(
+            FixtureTransport(
+                TransportResult.Ok(
+                    ComputerStatus(
+                        protocolVersion = MobileProtocol.VERSION,
+                        adapterVersion = "1.0.0",
+                        hostVersion = "0.2.0-rc.2（示例）",
+                        computerId = "demo-mac",
+                        computerName = "我的 Mac",
+                        capabilities = Operation.entries.toSet(),
+                        grantedScopes = Scope.entries.toSet(),
+                    ),
+                ),
+            ),
+        )
+    }
+    LaunchedEffect(repository) { negotiated = repository.refresh() }
+
     when (screen) {
         Screen.Home -> MobileApp(
             state = UiState.NORMAL,
+            computerState = negotiated,
             wakeConfig = settings.wakeConfig,
             onSaveWakeConfig = { settings.saveWakeConfig(it) },
             onOpenLegacyWebView = {

@@ -26,9 +26,22 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.res.vectorResource
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import io.github.sunway0573.dshmobile.R
 import io.github.sunway0573.dshmobile.mobile.demo.DemoData
+import io.github.sunway0573.dshmobile.mobile.repository.ComputerState
+
+/**
+ * Test tags for the three navigation items.
+ *
+ * The labels are not unique — 电脑 is also the screen title and a section
+ * heading, so `onNodeWithText("电脑")` matches three nodes and fails. Selecting
+ * by tag is the only matcher that stays correct as the copy changes.
+ */
+internal const val NavTagComputers = "nav_computers"
+internal const val NavTagTasks = "nav_tasks"
+internal const val NavTagApprovals = "nav_approvals"
 
 /** The three top-level destinations. */
 internal enum class Tab { COMPUTERS, TASKS, APPROVALS }
@@ -64,6 +77,7 @@ internal sealed interface Route {
 @Composable
 internal fun MobileApp(
     state: UiState,
+    computerState: ComputerState,
     wakeConfig: WakeConfig,
     onSaveWakeConfig: (WakeConfig) -> Unit,
     onOpenLegacyWebView: () -> Unit,
@@ -166,6 +180,7 @@ internal fun MobileApp(
                                 onRevoke = {},
                             )
                             Route.Diagnostics -> DiagnosticsScreen(
+                                computerState = computerState,
                                 onBack = { route = Route.Settings },
                                 onOpenLegacyWebView = onOpenLegacyWebView,
                                 wakeConfig = wakeConfig,
@@ -216,6 +231,7 @@ private fun AppNavigationBar(tab: Tab, pending: Int, onSelect: (Tab) -> Unit) {
         NavigationBarItem(
             selected = tab == Tab.COMPUTERS,
             onClick = { onSelect(Tab.COMPUTERS) },
+            modifier = Modifier.testTag(NavTagComputers),
             icon = { NavIcon(R.drawable.ic_desktop_windows) },
             label = { Text(stringResource(R.string.nav_computers)) },
             colors = navColors(),
@@ -223,6 +239,7 @@ private fun AppNavigationBar(tab: Tab, pending: Int, onSelect: (Tab) -> Unit) {
         NavigationBarItem(
             selected = tab == Tab.TASKS,
             onClick = { onSelect(Tab.TASKS) },
+            modifier = Modifier.testTag(NavTagTasks),
             icon = { NavIcon(R.drawable.ic_chat_bubble) },
             label = { Text(stringResource(R.string.nav_tasks)) },
             colors = navColors(),
@@ -230,6 +247,7 @@ private fun AppNavigationBar(tab: Tab, pending: Int, onSelect: (Tab) -> Unit) {
         NavigationBarItem(
             selected = tab == Tab.APPROVALS,
             onClick = { onSelect(Tab.APPROVALS) },
+            modifier = Modifier.testTag(NavTagApprovals),
             icon = {
                 BadgedBox(
                     badge = {
