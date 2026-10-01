@@ -185,6 +185,7 @@
     <string name="diag_capabilities">可用操作</string>
     <string name="diag_unavailable">不可用操作</string>
     <string name="diag_incompatible">版本不兼容</string>
+    <string name="diag_forbidden">权限不足</string>
     <string name="diag_wake">唤醒</string>
     <string name="diag_wake_relay">唤醒中继</string>
     <string name="diag_wake_none">未配置</string>

@@ -9,6 +9,10 @@ android {
     compileSdk = 35
 
     defaultConfig {
+        // The adapter's own version, reported in the handshake. Read from the
+        // build rather than written into a screen, so diagnostics cannot drift
+        // from what is installed.
+        buildConfigField("String", "MOBILE_ADAPTER_VERSION", "\"1.0.0\"")
         applicationId = "io.github.sunway0573.dshmobile"
         minSdk = 26
         targetSdk = 35
@@ -37,6 +41,10 @@ android {
     }
 
     buildFeatures {
+        // Diagnostics must report the version that is actually installed. A
+        // hardcoded string drifted from 0.1.0 to a claimed 0.2.0 (2) and would
+        // have recorded a wrong version in every compatibility report.
+        buildConfig = true
         compose = true
     }
 }

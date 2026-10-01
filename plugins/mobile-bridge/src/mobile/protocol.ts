@@ -27,6 +27,20 @@
 export const PROTOCOL_VERSION = 1
 
 /**
+ * Protocol versions this adapter can speak.
+ *
+ * A list rather than a constant, because negotiation needs two lists to
+ * intersect. Reporting `1` while accepting something else — which an earlier
+ * version did — means a client that follows the handshake is refused by the
+ * very adapter that told it what to send.
+ *
+ * Additive operations do not need a new version: a client that does not know an
+ * operation is refused by name, and one that does not know a capability simply
+ * does not use it.
+ */
+export const SUPPORTED_PROTOCOL_VERSIONS: readonly number[] = [1]
+
+/**
  * Every operation a phone may request.
  *
  * Adding one is a protocol change; removing one is a breaking protocol change.
@@ -81,6 +95,21 @@ export const OPERATION_SCOPE: Readonly<Record<Operation, Scope>> = Object.freeze
   'file.preview': 'files.preview',
 })
 
+/**
+ * Operations that change something and therefore need a payload.
+ *
+ * A write with no body is not a valid request, and an earlier version let it
+ * through to `canonicalPayload`, which threw on `undefined.length` and escaped
+ * as an unhandled exception — in a method documented never to throw. The phone
+ * got a crash-shaped failure instead of a refusal it could show.
+ */
+const REQUIRED_PAYLOAD: ReadonlySet<Operation> = new Set<Operation>([
+  'task.submit',
+  'task.cancel',
+  'approval.decide',
+  'question.answer',
+])
+
 /** Why a request was refused. Stable strings: clients branch on them. */
 export const REFUSAL = {
   /** The client speaks a protocol this adapter does not. */
@@ -91,13 +120,32 @@ export const REFUSAL = {
   MISSING_CAPABILITY: 'MISSING_CAPABILITY',
   /** The device is not granted the scope this operation needs. */
   FORBIDDEN_SCOPE: 'FORBIDDEN_SCOPE',
+  /** No device identity on the request, so no grant could be checked. */
+  UNAUTHENTICATED: 'UNAUTHENTICATED',
+  /** The device is known but its authorisation was revoked. */
+  DEVICE_REVOKED: 'DEVICE_REVOKED',
   /** The operation belongs to a different computer. */
   WRONG_COMPUTER: 'WRONG_COMPUTER',
-  /** Same commandId, different payload. */
+  /** The envelope is malformed or a required field is missing. */
+  INVALID_PAYLOAD: 'INVALID_PAYLOAD',
+  /** Same commandId, different request. */
   COMMAND_CONFLICT: 'COMMAND_CONFLICT',
   /** The command was registered but its outcome is not knowable. */
   COMMAND_STATE_UNKNOWN: 'COMMAND_STATE_UNKNOWN',
-  /** An approval whose type this adapter does not recognise. */
+  /**
+   * The decision field was present but not one of the allowed values.
+   *
+   * Distinct from {@link UNKNOWN_APPROVAL_TYPE}: this says the *answer* could
+   * not be read, not that the *question* was unrecognised. Collapsing them made
+   * the earlier report claim more coverage than it had.
+   */
+  MALFORMED_APPROVAL_DECISION: 'MALFORMED_APPROVAL_DECISION',
+  /**
+   * The approval being answered is not one this adapter knows about.
+   *
+   * Requires an authoritative record of pending approvals. Not implemented:
+   * there is no approval owner yet, and this code is reserved for it.
+   */
   UNKNOWN_APPROVAL_TYPE: 'UNKNOWN_APPROVAL_TYPE',
 } as const
 
@@ -105,22 +153,32 @@ export type RefusalCode = (typeof REFUSAL)[keyof typeof REFUSAL]
 
 export type Availability =
   | { readonly ok: true; readonly scope: Scope }
-  | {
-      readonly ok: false
-      readonly code: RefusalCode
-      readonly message: string
-    }
+  | { readonly ok: false; readonly code: RefusalCode; readonly message: string }
 
-/** What the adapter can serve right now, and what this device may use. */
+/**
+ * What the adapter can serve right now, and what this device may use.
+ *
+ * `grantedScopes` is deliberately absent. It used to be copied in at
+ * construction, which meant a device whose authorisation was revoked mid-session
+ * kept working until the plugin restarted — the review reproduced exactly that.
+ * Permissions now come from {@link AdapterOptions.resolveDevice} on each
+ * request.
+ */
 export interface AdapterContext {
   /** Protocol versions this adapter implements. */
   readonly supportedProtocols: readonly number[]
   /** Operations this build can actually execute against the installed host. */
   readonly capabilities: readonly Operation[]
-  /** Scopes the paired device holds. */
-  readonly grantedScopes: readonly Scope[]
   /** The computer this adapter serves; a command for another one is refused. */
   readonly computerId: string
+}
+
+/** A paired device, as the computer currently records it. */
+export interface DeviceRecord {
+  readonly deviceId: string
+  readonly grantedScopes: readonly Scope[]
+  /** False once the user has removed this device from the computer. */
+  readonly authorized: boolean
 }
 
 export function isOperation(value: unknown): value is Operation {
@@ -132,28 +190,68 @@ export function isScope(value: unknown): value is Scope {
 }
 
 /**
+ * The highest protocol version both ends speak.
+ *
+ * @returns the version to use, or `undefined` when there is none. The caller
+ *   must treat `undefined` as incompatible — never as "use ours and hope",
+ *   which is how a client ends up sending a version the server refuses.
+ *
+ * Highest rather than lowest: both lists are ordered by capability, and the
+ * newest shared version is the one with the most of it.
+ */
+export function selectProtocolVersion(
+  clientVersions: readonly unknown[],
+  serverVersions: readonly number[] = SUPPORTED_PROTOCOL_VERSIONS,
+): number | undefined {
+  const usable = serverVersions.filter(
+    (version) => Number.isInteger(version) && version > 0,
+  )
+  if (usable.length === 0) return undefined
+
+  const shared = usable.filter((version) =>
+    clientVersions.some((client) => client === version),
+  )
+  if (shared.length === 0) return undefined
+
+  return Math.max(...shared)
+}
+
+/** Whether a command carries a body at all. */
+export function hasPayload(operation: Operation, payload: unknown): boolean {
+  if (!REQUIRED_PAYLOAD.has(operation)) return true
+  return payload !== null && payload !== undefined
+}
+
+/**
  * Whether an operation may run, given the protocol, the build and the device.
  *
- * Three independent conditions, all required:
+ * Four independent conditions, all required:
  *
- * 1. **Protocol** — the client and this adapter agree on the envelope.
- * 2. **Capability** — this build can actually do it against the installed host.
- *    A newer adapter on an older Harness implements fewer operations, and must
- *    say so rather than failing at call time.
- * 3. **Permission** — the device holds the scope.
+ * 1. **Protocol** — the two ends share a version.
+ * 2. **Identity** — the request names a device, and that device is known here.
+ * 3. **Capability** — this build can actually do it against the installed host.
+ * 4. **Permission** — the device holds the scope *right now*.
  *
- * The order matters because the messages differ. "Your app is too new" and "this
- * computer has not been updated" and "you were not granted this" have three
- * different fixes, and a client that cannot tell them apart sends the user to
- * the wrong one.
+ * The order matters because the messages differ. "Your app is too new", "this
+ * computer has not been updated", "you were not granted this" and "this device
+ * was removed" have four different fixes, and a client that cannot tell them
+ * apart sends the user to the wrong one. Updating the app does not restore a
+ * revoked grant.
  *
- * Note what this is not: hiding the button in the phone's UI. The plan is
- * explicit that a hidden control is not access control. This runs on the
- * computer, per request, every time.
+ * Note what this is not: hiding a button in the phone's UI. The plan is explicit
+ * that a hidden control is not access control. This runs on the computer, per
+ * request, every time.
  */
 export function availability(
-  request: { readonly protocolVersion: unknown; readonly operation: unknown; readonly computerId?: unknown },
+  request: {
+    readonly protocolVersion: unknown
+    readonly operation: unknown
+    readonly computerId?: unknown
+    readonly deviceId?: unknown
+    readonly payload?: unknown
+  },
   context: AdapterContext,
+  device: DeviceRecord | undefined,
 ): Availability {
   const version = request.protocolVersion
   if (typeof version !== 'number' || !context.supportedProtocols.includes(version)) {
@@ -166,6 +264,36 @@ export function availability(
     }
   }
 
+  // Identity before the operation, not after. An unauthenticated caller should
+  // not get operation-level answers at all: "unknown operation" and "you cannot
+  // do that" are different facts about this computer, and telling them apart is
+  // free reconnaissance.
+  if (typeof request.deviceId !== 'string' || request.deviceId === '') {
+    return {
+      ok: false,
+      code: REFUSAL.UNAUTHENTICATED,
+      message: 'This request did not identify the device that sent it.',
+    }
+  }
+  if (device === undefined) {
+    return {
+      ok: false,
+      code: REFUSAL.DEVICE_REVOKED,
+      message:
+        'This phone is no longer paired with the computer. ' +
+        'Pair it again from the computer to restore access.',
+    }
+  }
+  if (!device.authorized) {
+    return {
+      ok: false,
+      code: REFUSAL.DEVICE_REVOKED,
+      message:
+        'This device was removed on the computer. ' +
+        'Updating the app will not restore it; pair again from the computer.',
+    }
+  }
+
   if (!isOperation(request.operation)) {
     return {
       ok: false,
@@ -174,9 +302,6 @@ export function availability(
     }
   }
 
-  // A command naming another computer is refused even when everything else
-  // checks out. With more than one computer paired this is how a stale
-  // notification or a mixed-up draft would otherwise act on the wrong machine.
   if (request.computerId !== undefined && request.computerId !== context.computerId) {
     return {
       ok: false,
@@ -196,8 +321,18 @@ export function availability(
     }
   }
 
+  if (!hasPayload(operation, request.payload)) {
+    return {
+      ok: false,
+      code: REFUSAL.INVALID_PAYLOAD,
+      message: `"${operation}" needs a request body, and none was sent.`,
+    }
+  }
+
+  // Read live, never from a snapshot taken at construction. A grant that was
+  // revoked a minute ago is not a grant.
   const scope = OPERATION_SCOPE[operation]
-  if (!context.grantedScopes.includes(scope)) {
+  if (!device.grantedScopes.includes(scope)) {
     return {
       ok: false,
       code: REFUSAL.FORBIDDEN_SCOPE,
@@ -218,7 +353,10 @@ export function availability(
  * actually offers.
  */
 export interface StatusReport {
+  /** The version this reply is written in, and the one to use from now on. */
   readonly protocolVersion: number
+  /** Everything this adapter can speak, so the client can pick for itself. */
+  readonly supportedProtocols: readonly number[]
   readonly adapterVersion: string
   readonly hostVersion: string
   readonly computerId: string
@@ -231,13 +369,15 @@ export interface StatusReport {
 export interface CommandEnvelope {
   readonly protocolVersion: number
   readonly computerId: string
+  /** Which paired device sent this. Required: grants are per device. */
+  readonly deviceId: string
   readonly commandId: string
   readonly operation: string
   readonly payload?: unknown
 }
 
 /**
- * The one field an approval decision may carry.
+ * The values an approval decision may carry.
  *
  * A closed union rather than a boolean, because `false` has to mean "deny" and
  * there is no safe default for a missing field. An unrecognised value is denied
@@ -257,6 +397,10 @@ export function isApprovalDecision(value: unknown): value is ApprovalDecision {
  * @returns the decision, or `undefined` when it is missing or unrecognised.
  *   The caller must treat `undefined` as a refusal and say why — never as
  *   "allow", and never as "no answer, carry on".
+ *
+ * This checks the *answer*. Whether the *question* refers to a real pending
+ * approval is a separate check that needs the approval owner, and is not
+ * implemented — see {@link REFUSAL.UNKNOWN_APPROVAL_TYPE}.
  */
 export function parseApprovalDecision(payload: unknown): ApprovalDecision | undefined {
   if (payload === null || typeof payload !== 'object') return undefined

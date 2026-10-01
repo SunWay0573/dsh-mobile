@@ -23,6 +23,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
+import io.github.sunway0573.dshmobile.BuildConfig
 import io.github.sunway0573.dshmobile.R
 import io.github.sunway0573.dshmobile.Wake
 import io.github.sunway0573.dshmobile.WakeOnLan
@@ -153,7 +154,7 @@ internal fun DiagnosticsScreen(
                 when (computerState) {
                     is ComputerState.Connected -> {
                         KeyValue(stringResource(R.string.diag_computer), computerState.computerName)
-                        KeyValue(stringResource(R.string.diag_protocol), "1")
+                        KeyValue(stringResource(R.string.diag_protocol), computerState.protocolVersion.toString())
                         KeyValue(stringResource(R.string.diag_host_version), computerState.hostVersion)
                         KeyValue(stringResource(R.string.diag_adapter_version), computerState.adapterVersion)
                         KeyValue(
@@ -194,6 +195,48 @@ internal fun DiagnosticsScreen(
                         )
                     }
 
+                    is ComputerState.Unauthenticated -> {
+                        KeyValue(
+                            stringResource(R.string.settings_status),
+                            stringResource(R.string.demo_not_connected),
+                            Tone.WARN,
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            computerState.detail,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MobileColors.Muted,
+                        )
+                    }
+
+                    is ComputerState.Revoked -> {
+                        KeyValue(
+                            stringResource(R.string.settings_status),
+                            stringResource(R.string.common_revoked),
+                            Tone.ERR,
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            computerState.detail,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MobileColors.Err,
+                        )
+                    }
+
+                    is ComputerState.Forbidden -> {
+                        KeyValue(
+                            stringResource(R.string.settings_status),
+                            stringResource(R.string.diag_forbidden),
+                            Tone.WARN,
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            computerState.detail,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MobileColors.Warn,
+                        )
+                    }
+
                     is ComputerState.Failed -> {
                         KeyValue(
                             stringResource(R.string.settings_status),
@@ -215,7 +258,10 @@ internal fun DiagnosticsScreen(
 
             SectionHeader(stringResource(R.string.diag_info))
             MobileCard {
-                KeyValue(stringResource(R.string.diag_app_version), "0.2.0 (2)")
+                KeyValue(
+                    stringResource(R.string.diag_app_version),
+                    BuildConfig.VERSION_NAME + " (" + BuildConfig.VERSION_CODE + ")",
+                )
                 KeyValue(stringResource(R.string.diag_host_version), stringResource(R.string.demo_not_connected))
                 KeyValue(stringResource(R.string.diag_cache), stringResource(R.string.demo_not_connected))
                 Spacer(Modifier.height(12.dp))

@@ -29,6 +29,15 @@ internal object MobileProtocol {
      */
     const val VERSION = 1
 
+    /**
+     * 这个手机端会说的协议版本。
+     *
+     * 是列表而不是单个常量：协商需要两边各拿一个列表求交集。
+     * 只说一个值、却在别处接受另一个值，就会出现"按握手报告发过去的请求被握手方自己拒绝"——
+     * 这正是复核复现的那个缺陷。
+     */
+    val SUPPORTED_VERSIONS: Set<Int> = setOf(1)
+
     /** Every operation this build implements. A subset of these may be available. */
     val IMPLEMENTED: Set<Operation> = Operation.entries.toSet()
 }
@@ -87,6 +96,8 @@ internal val OPERATION_SCOPE: Map<Operation, Scope> = mapOf(
 /** What the computer says about itself and what this phone may do. */
 internal data class ComputerStatus(
     val protocolVersion: Int,
+    /** 电脑端能说的全部版本，供手机自行选择，而不是只能相信单个值。 */
+    val supportedProtocols: Set<Int>,
     val adapterVersion: String,
     val hostVersion: String,
     val computerId: String,
@@ -117,6 +128,8 @@ internal sealed interface Negotiation {
      */
     data class Ready(
         val status: ComputerStatus,
+        /** 双方共同选定的版本。界面和请求编码都用它，不是各自写死的常量。 */
+        val protocolVersion: Int,
         val available: Set<Operation>,
         val unavailableKnown: Set<Operation>,
     ) : Negotiation
@@ -148,7 +161,28 @@ internal enum class Incompatibility {
 
     /** The protocol matches but the computer offers nothing phone and grant allow. */
     NO_USABLE_OPERATIONS,
+
+    /**
+     * 两边没有任何共同版本。
+     *
+     * 与"电脑太新"和"电脑太旧"都不同：那两种能指出该更新哪一端，
+     * 而这种只能说明两端都落后于对方，无法从手机单方面判断谁该动。
+     */
+    NO_COMMON_VERSION,
 }
+
+/**
+ * 选出双方都支持的最高协议版本。
+ *
+ * 取最高而不是最低：两个列表都按能力递增，共享的最高版本能力最多。
+ *
+ * @return 选中的版本；没有共同版本时返回 null。调用方必须把 null 当作不兼容，
+ *   绝不能"先用我们自己的试试"——那正是把不兼容变成运行期失败的做法。
+ */
+internal fun selectProtocolVersion(
+    serverVersions: Set<Int>,
+    clientVersions: Set<Int> = MobileProtocol.SUPPORTED_VERSIONS,
+): Int? = serverVersions.intersect(clientVersions).maxOrNull()
 
 /**
  * Decide whether a status reply is usable, and what it permits.
@@ -158,20 +192,30 @@ internal enum class Incompatibility {
  *   failure case and treat an empty result as success.
  */
 internal fun negotiate(raw: ComputerStatus): Negotiation {
-    if (raw.protocolVersion > MobileProtocol.VERSION) {
+    // 用两边各自声明的列表求共同版本，而不是拿单个数字和常量比。
+    // 后者在电脑端支持多个版本时会得出错误结论。
+    val agreed = selectProtocolVersion(raw.supportedProtocols)
+
+    if (agreed == null) {
+        val serverMax = raw.supportedProtocols.maxOrNull()
+        val clientMax = MobileProtocol.SUPPORTED_VERSIONS.maxOrNull() ?: 0
+        val kind = when {
+            serverMax == null -> Incompatibility.NO_COMMON_VERSION
+            serverMax > clientMax -> Incompatibility.CLIENT_TOO_OLD
+            serverMax < clientMax -> Incompatibility.COMPUTER_TOO_OLD
+            else -> Incompatibility.NO_COMMON_VERSION
+        }
+        val blame = when (kind) {
+            Incompatibility.CLIENT_TOO_OLD -> "请更新手机上的 App。"
+            Incompatibility.COMPUTER_TOO_OLD -> "请在这台电脑上更新插件。"
+            else -> "请把两端都更新到较新版本。"
+        }
         return Negotiation.Incompatible(
-            Incompatibility.CLIENT_TOO_OLD,
-            "这台电脑使用的是更新的协议（${raw.protocolVersion}），" +
-                "而这个手机端只会说版本 ${MobileProtocol.VERSION}。" +
-                "请更新手机上的 App。重试不会有帮助。",
-        )
-    }
-    if (raw.protocolVersion < MobileProtocol.VERSION) {
-        return Negotiation.Incompatible(
-            Incompatibility.COMPUTER_TOO_OLD,
-            "这台电脑使用的是较旧的协议（${raw.protocolVersion}），" +
-                "而这个手机端需要版本 ${MobileProtocol.VERSION}。" +
-                "请在这台电脑上更新插件。重试不会有帮助。",
+            kind,
+            "没有共同的协议版本：电脑端支持 " +
+                "${raw.supportedProtocols.sorted().joinToString(", ").ifEmpty { "（未声明）" }}，" +
+                "手机端支持 ${MobileProtocol.SUPPORTED_VERSIONS.sorted().joinToString(", ")}。" +
+                "$blame 重试不会有帮助。",
         )
     }
 
@@ -196,7 +240,12 @@ internal fun negotiate(raw: ComputerStatus): Negotiation {
         )
     }
 
-    return Negotiation.Ready(status = raw, available = available, unavailableKnown = known)
+    return Negotiation.Ready(
+        status = raw,
+        protocolVersion = agreed,
+        available = available,
+        unavailableKnown = known,
+    )
 }
 
 /** Encode a command for the wire. */
@@ -205,8 +254,9 @@ internal fun encodeCommand(
     commandId: String,
     operation: Operation,
     payload: JSONObject?,
+    protocolVersion: Int = MobileProtocol.VERSION,
 ): JSONObject = JSONObject().apply {
-    put("protocolVersion", MobileProtocol.VERSION)
+    put("protocolVersion", protocolVersion)
     put("computerId", computerId)
     put("commandId", commandId)
     put("operation", operation.wire)
@@ -230,6 +280,9 @@ internal fun parseStatus(json: JSONObject): ComputerStatus? {
 
     return ComputerStatus(
         protocolVersion = protocolVersion,
+        supportedProtocols = json.optJSONArray("supportedProtocols")
+            .toIntSet()
+            .ifEmpty { setOf(protocolVersion) },
         adapterVersion = json.optString("adapterVersion", ""),
         hostVersion = json.optString("hostVersion", ""),
         computerId = computerId,
@@ -241,6 +294,16 @@ internal fun parseStatus(json: JSONObject): ComputerStatus? {
             .mapNotNull(Scope::fromWire)
             .toSet(),
     )
+}
+
+private fun JSONArray?.toIntSet(): Set<Int> {
+    if (this == null) return emptySet()
+    val out = mutableSetOf<Int>()
+    for (index in 0 until length()) {
+        val value = optInt(index, -1)
+        if (value > 0) out.add(value)
+    }
+    return out
 }
 
 private fun JSONArray?.toStringSet(): Set<String> {
@@ -262,6 +325,14 @@ internal enum class Refusal(val wire: String) {
     WrongComputer("WRONG_COMPUTER"),
     CommandConflict("COMMAND_CONFLICT"),
     CommandStateUnknown("COMMAND_STATE_UNKNOWN"),
+    Unauthenticated("UNAUTHENTICATED"),
+    DeviceRevoked("DEVICE_REVOKED"),
+    InvalidPayload("INVALID_PAYLOAD"),
+    /**
+     * decision 字段读了但读不懂。与 UnknownApprovalType 不同：
+     * 那个说的是"问题认不出来"，这个说的是"答案认不出来"。
+     */
+    MalformedApprovalDecision("MALFORMED_APPROVAL_DECISION"),
     UnknownApprovalType("UNKNOWN_APPROVAL_TYPE"),
     HandlerFailed("HANDLER_FAILED"),
     Unknown(""),
@@ -296,8 +367,16 @@ internal fun refusalMessage(refusal: Refusal, computerName: String): String = wh
     Refusal.CommandStateUnknown ->
         "这条命令已经送达，但结果未知——它可能执行了，也可能没有。" +
             "请先到任务列表确认，再决定是否重发。"
+    Refusal.Unauthenticated ->
+        "这个请求没有说明是哪台手机发的，因此被拒绝。请重新配对。"
+    Refusal.DeviceRevoked ->
+        "这台手机在电脑上的授权已经被移除。**更新 App 不会恢复它**，请在电脑上重新配对。"
+    Refusal.InvalidPayload ->
+        "这个请求缺少必要内容，因此没有执行。"
+    Refusal.MalformedApprovalDecision ->
+        "这个审批决定无法识别，因此没有被执行。任务会停在这一步等待处理。"
     Refusal.UnknownApprovalType ->
-        "这个审批请求无法识别，因此没有被执行。任务会停在这一步等待处理。"
+        "电脑无法确认这个审批对应哪一条待处理请求，因此没有执行。请在电脑上处理。"
     Refusal.HandlerFailed ->
         "电脑处理这条命令时出错了。电脑上的日志会说明原因。"
     Refusal.Unknown ->

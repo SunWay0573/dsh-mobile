@@ -3,32 +3,39 @@ package io.github.sunway0573.dshmobile.mobile.repository
 import io.github.sunway0573.dshmobile.mobile.protocol.Incompatibility
 import io.github.sunway0573.dshmobile.mobile.protocol.Negotiation
 import io.github.sunway0573.dshmobile.mobile.protocol.Operation
+import io.github.sunway0573.dshmobile.mobile.protocol.Refusal
 import io.github.sunway0573.dshmobile.mobile.protocol.negotiate
+import io.github.sunway0573.dshmobile.mobile.protocol.refusalMessage
 import io.github.sunway0573.dshmobile.mobile.transport.MobileTransport
 import io.github.sunway0573.dshmobile.mobile.transport.TransportResult
 
 /**
  * What a screen should show about one computer.
  *
- * Four states that a user must be able to tell apart, because each has a
- * different next action:
+ * Six states, because each has a different next action, and sending someone to
+ * the wrong one wastes their time:
  *
- * - {@link Connected} — usable, possibly with fewer operations than this build
- *   implements.
- * - {@link Offline} — the computer could not be reached. Waiting, or fixing the
- *   network, may help.
- * - {@link Incompatible} — it was reached and cannot be used until one end is
- *   updated. **Retrying will never help**, and saying so is the point.
- * - {@link Failed} — it answered, but with something unusable.
+ * | state | what happened | what to do |
+ * | --- | --- | --- |
+ * | {@link Connected} | usable | nothing |
+ * | {@link Offline} | could not be reached | wait, or fix the network |
+ * | {@link Unauthenticated} | never paired | scan the computer's code |
+ * | {@link Revoked} | the computer removed this phone | pair again — updating the app will not help |
+ * | {@link Forbidden} | paired, but this permission is missing | change the grant on the computer |
+ * | {@link Incompatible} | the two ends share no protocol | update one of them; **retrying never helps** |
  *
- * Collapsing the middle two into "error" would send a user to check their Wi-Fi
- * when they need to update a plugin.
+ * An earlier version collapsed every refusal into {@link Incompatible}, and a
+ * test locked that in. The consequence is a user told to update the app when the
+ * actual answer is that their authorisation was revoked — and updating would not
+ * have restored it.
  */
 internal sealed interface ComputerState {
 
     data class Connected(
         val computerId: String,
         val computerName: String,
+        /** The version both ends agreed on, not the constant this build speaks. */
+        val protocolVersion: Int,
         val hostVersion: String,
         val adapterVersion: String,
         val available: Set<Operation>,
@@ -39,6 +46,15 @@ internal sealed interface ComputerState {
     }
 
     data class Offline(val detail: String) : ComputerState
+
+    /** No device identity, or the computer does not recognise this phone. */
+    data class Unauthenticated(val detail: String) : ComputerState
+
+    /** The computer removed this device. Not fixable from the phone. */
+    data class Revoked(val detail: String) : ComputerState
+
+    /** Paired, but the grant this operation needs is missing. */
+    data class Forbidden(val detail: String) : ComputerState
 
     data class Incompatible(val kind: Incompatibility, val message: String) : ComputerState
 
@@ -55,6 +71,8 @@ internal sealed interface ComputerState {
  */
 internal class SessionRepository(
     private val transport: MobileTransport,
+    /** Which paired device this repository speaks as. Empty means not paired. */
+    private val deviceId: String,
 ) {
 
     /** The last state, for a screen that needs to render before a refresh. */
@@ -68,32 +86,35 @@ internal class SessionRepository(
      * cannot forget to handle one and leave a screen blank.
      */
     suspend fun refresh(): ComputerState {
+        if (deviceId.isEmpty()) {
+            return ComputerState.Unauthenticated("这台手机还没有和任何电脑配对。")
+                .also { state = it }
+        }
+
         val reached = try {
-            transport.status()
+            transport.status(deviceId)
         } catch (error: Throwable) {
-            // A transport is third-party-adjacent code — an HTTP client, a
-            // socket, a tunnel. An exception escaping here would take down the
-            // screen rather than reporting a connection problem.
+            // A transport is a socket, an HTTP client, a tunnel — code that
+            // throws. An exception escaping here would take down the screen
+            // instead of reporting a connection problem, which is a much worse
+            // outcome for the same underlying event.
             val detail = error.message ?: error::class.simpleName ?: "未知错误"
-            return ComputerState.Offline("连接${transport.endpoint}时出错：$detail").also { state = it }
+            return ComputerState.Offline("连接${transport.endpoint}时出错：$detail")
+                .also { state = it }
         }
 
         val next = when (reached) {
-            is TransportResult.Unreachable ->
-                ComputerState.Offline(reached.detail)
+            is TransportResult.Unreachable -> ComputerState.Offline(reached.detail)
 
-            is TransportResult.Refused ->
-                // The computer answered and refused the handshake itself. That
-                // is not a network problem, so it must not read like one.
-                ComputerState.Incompatible(
-                    Incompatibility.NO_USABLE_OPERATIONS,
-                    reached.message,
-                )
+            // The computer answered and refused. Which refusal matters: three of
+            // these are not version problems and updating would not fix them.
+            is TransportResult.Refused -> classify(reached.code, reached.message)
 
             is TransportResult.Ok -> when (val negotiated = negotiate(reached.value)) {
                 is Negotiation.Ready -> ComputerState.Connected(
                     computerId = negotiated.status.computerId,
                     computerName = negotiated.status.computerName,
+                    protocolVersion = negotiated.protocolVersion,
                     hostVersion = negotiated.status.hostVersion,
                     adapterVersion = negotiated.status.adapterVersion,
                     available = negotiated.available,
@@ -103,12 +124,26 @@ internal class SessionRepository(
                 is Negotiation.Incompatible ->
                     ComputerState.Incompatible(negotiated.kind, negotiated.message)
 
-                is Negotiation.Malformed ->
-                    ComputerState.Failed(negotiated.detail)
+                is Negotiation.Malformed -> ComputerState.Failed(negotiated.detail)
             }
         }
 
         state = next
         return next
     }
+
+    private fun classify(code: String, message: String): ComputerState = when (Refusal.fromWire(code)) {
+        Refusal.Unauthenticated -> ComputerState.Unauthenticated(message)
+        Refusal.DeviceRevoked -> ComputerState.Revoked(message)
+        Refusal.ForbiddenScope -> ComputerState.Forbidden(message)
+        Refusal.UnsupportedProtocol ->
+            ComputerState.Incompatible(Incompatibility.NO_COMMON_VERSION, message)
+        Refusal.MissingCapability, Refusal.UnknownOperation ->
+            ComputerState.Incompatible(Incompatibility.NO_USABLE_OPERATIONS, message)
+        else -> ComputerState.Failed(message)
+    }
+
+    /** The sentence to show for a refusal from this computer, if any. */
+    fun refusalText(code: String, computerName: String): String =
+        refusalMessage(Refusal.fromWire(code), computerName)
 }

@@ -12,10 +12,19 @@
  * {@link MobileAdapter.status} reports an operation as available exactly when a
  * handler is registered for it. A version table would be a promise about
  * behaviour that drifts the moment the host changes; the set of handlers is
- * what the build can actually do. When a real transport lands, the handlers are
- * the DSH calls — and an operation whose host support is missing simply has no
- * handler, so the phone is told it is unavailable rather than discovering it
- * through a failure.
+ * what the build can actually do.
+ *
+ * Registering a handler means the *method* exists, not that its semantics match
+ * the installed host. When this is wired to a real DSH, only operations whose
+ * behaviour has been verified against that host should have handlers.
+ *
+ * ## Permissions are read per request, never snapshotted
+ *
+ * An earlier version copied the device's scopes at construction. The review
+ * reproduced the consequence: `session.list` succeeded, the grant was then
+ * emptied, and the same adapter accepted a second request and ran the handler
+ * again. A grant revoked a minute ago is not a grant, so there is nothing here
+ * to go stale.
  *
  * @module mobile/adapter
  */
@@ -23,18 +32,19 @@
 import {
   APPROVAL_DECISIONS,
   OPERATIONS,
-  SCOPES,
   PROTOCOL_VERSION,
   REFUSAL,
+  SCOPES,
   availability,
   parseApprovalDecision,
   type AdapterContext,
   type CommandEnvelope,
+  type DeviceRecord,
   type Operation,
   type Scope,
   type StatusReport,
 } from './protocol.ts'
-import { CommandStore } from './command-store.ts'
+import { CommandStore, type CommandToken } from './command-store.ts'
 
 /**
  * Operations that change something.
@@ -55,6 +65,7 @@ export interface HandlerContext {
   /** The scope the device was checked against, for the handler's own logging. */
   readonly scope: string
   readonly computerId: string
+  readonly deviceId: string
 }
 
 export type OperationHandler = (payload: unknown, context: HandlerContext) => Promise<unknown>
@@ -66,9 +77,16 @@ export interface AdapterOptions {
   readonly hostVersion: string
   /** Handlers this build can actually serve. Their keys are the capabilities. */
   readonly handlers: Partial<Record<Operation, OperationHandler>>
-  readonly grantedScopes: readonly Scope[]
+  /**
+   * Look up a paired device as it is *now*.
+   *
+   * Called on every request. Returning `undefined` means the device is unknown
+   * or was removed, and the request is refused. Implementations must not cache:
+   * a stale answer here is the whole bug this replaced.
+   */
+  readonly resolveDevice: (deviceId: string) => DeviceRecord | undefined
   readonly store?: CommandStore
-  /** Protocol versions this adapter accepts. Defaults to just the current one. */
+  /** Protocol versions this adapter accepts. Defaults to the one it speaks. */
   readonly supportedProtocols?: readonly number[]
 }
 
@@ -87,7 +105,6 @@ export class MobileAdapter {
   readonly #store: CommandStore
   readonly #capabilities: readonly Operation[]
   readonly #protocols: readonly number[]
-  readonly #scopes: readonly Scope[]
 
   constructor(options: AdapterOptions) {
     this.#options = options
@@ -98,12 +115,6 @@ export class MobileAdapter {
     this.#capabilities = OPERATIONS.filter(
       (operation) => options.handlers[operation] !== undefined,
     )
-    // Intersected with what this adapter understands. A device record written
-    // by a newer plugin may name a scope this build has never heard of, and
-    // echoing it back would have the phone showing a permission that cannot be
-    // exercised — and, worse, implying it had been checked.
-    this.#scopes = options.grantedScopes.filter((scope): scope is Scope =>
-      (SCOPES as readonly string[]).includes(scope))
   }
 
   /** The dedup table, exposed so a durable one can be substituted later. */
@@ -115,7 +126,6 @@ export class MobileAdapter {
     return {
       supportedProtocols: this.#protocols,
       capabilities: this.#capabilities,
-      grantedScopes: this.#scopes,
       computerId: this.#options.computerId,
     }
   }
@@ -125,18 +135,29 @@ export class MobileAdapter {
    *
    * The phone caches this and uses it to decide what to show. It is not a
    * permission: every command is checked again on arrival, because a phone that
-   * was authorised an hour ago may have been revoked since, and because a
-   * client is not a trustworthy narrator of its own rights.
+   * was authorised an hour ago may have been revoked since, and because a client
+   * is not a trustworthy narrator of its own rights.
+   *
+   * @param deviceId who is asking. The reported scopes belong to that device — a
+   *   handshake that reported the computer's grants rather than this phone's
+   *   would have every phone showing every permission.
    */
-  status(): StatusReport {
+  status(deviceId: string): StatusReport {
+    const device = this.#options.resolveDevice(deviceId)
+    const granted = (device?.authorized === true ? device.grantedScopes : [])
+      .filter((scope): scope is Scope => (SCOPES as readonly string[]).includes(scope))
+
     return {
+      // The version this reply is written in. A client sharing none of
+      // `supportedProtocols` cannot read it, and says so rather than guessing.
       protocolVersion: PROTOCOL_VERSION,
+      supportedProtocols: [...this.#protocols],
       adapterVersion: this.#options.adapterVersion,
       hostVersion: this.#options.hostVersion,
       computerId: this.#options.computerId,
       computerName: this.#options.computerName,
       capabilities: this.#capabilities,
-      grantedScopes: this.#scopes,
+      grantedScopes: granted,
     }
   }
 
@@ -148,14 +169,22 @@ export class MobileAdapter {
    */
   async handle(envelope: CommandEnvelope): Promise<CommandOutcome> {
     const commandId = typeof envelope?.commandId === 'string' ? envelope.commandId : ''
+    const deviceId = typeof envelope?.deviceId === 'string' ? envelope.deviceId : ''
+
+    // Resolved once per request and not held across requests: the next one gets
+    // a fresh answer, which is what makes a mid-session revocation take effect.
+    const device = deviceId === '' ? undefined : this.#options.resolveDevice(deviceId)
 
     const allowed = availability(
       {
         protocolVersion: envelope?.protocolVersion,
         operation: envelope?.operation,
         computerId: envelope?.computerId,
+        deviceId: envelope?.deviceId,
+        payload: envelope?.payload,
       },
       this.#context(),
+      device,
     )
     if (!allowed.ok) {
       return { status: 'rejected', commandId, code: allowed.code, message: allowed.message }
@@ -163,24 +192,36 @@ export class MobileAdapter {
 
     const operation = envelope.operation as Operation
 
-    // An approval whose decision cannot be read is refused, and this check runs
-    // before anything else touches it. The default for an uninterpretable
-    // approval must be "no": a request nobody could parse is not consent.
+    // The *answer* could not be read. Distinct from an unrecognised *question*,
+    // which needs the approval owner — see the next branch.
     if (operation === 'approval.decide' && parseApprovalDecision(envelope.payload) === undefined) {
       return {
         status: 'rejected',
         commandId,
-        code: REFUSAL.UNKNOWN_APPROVAL_TYPE,
+        code: REFUSAL.MALFORMED_APPROVAL_DECISION,
         message:
           'This approval decision could not be read, so it was not applied. ' +
           `Expected one of: ${APPROVAL_DECISIONS.join(', ')}.`,
       }
     }
 
+    // Whether the approval being answered exists, belongs to this device and
+    // this computer, and is still pending is a separate question that needs an
+    // authoritative record of pending approvals. There is no approval owner yet,
+    // so this refuses rather than assuming the request is real: an approval
+    // nobody can place must not be actionable.
+    if (operation === 'approval.decide') {
+      return {
+        status: 'rejected',
+        commandId,
+        code: REFUSAL.UNKNOWN_APPROVAL_TYPE,
+        message:
+          'This computer cannot yet verify which approval this answers, so it was not applied. ' +
+          'Handle the request on the computer.',
+      }
+    }
+
     const handler = this.#options.handlers[operation]
-    // Unreachable while `capabilities` is derived from `handlers`, and kept
-    // because the two are computed separately and a future refactor could
-    // decouple them.
     if (handler === undefined) {
       return {
         status: 'rejected',
@@ -192,16 +233,25 @@ export class MobileAdapter {
 
     const isWrite = WRITE_OPERATIONS.has(operation)
 
-    if (isWrite) {
-      if (commandId === '') {
-        return {
-          status: 'rejected',
-          commandId,
-          code: REFUSAL.UNKNOWN_OPERATION,
-          message: 'A command that changes something needs a commandId so a retry can be recognised.',
-        }
+    if (isWrite && commandId === '') {
+      return {
+        status: 'rejected',
+        commandId,
+        code: REFUSAL.INVALID_PAYLOAD,
+        message: 'A command that changes something needs a commandId so a retry can be recognised.',
       }
-      const begun = this.#store.begin(commandId, envelope.payload)
+    }
+
+    let token: CommandToken | undefined
+    if (isWrite) {
+      const begun = this.#store.begin({
+        computerId: envelope.computerId,
+        deviceId,
+        commandId,
+        operation,
+        payload: envelope.payload,
+      })
+
       if (begun.kind === 'conflict') {
         return {
           status: 'rejected',
@@ -225,14 +275,16 @@ export class MobileAdapter {
             'Check the task list before deciding whether to send it again.',
         }
       }
+      token = begun.token
     }
 
     try {
       const result = await handler(envelope.payload, {
         scope: allowed.scope,
         computerId: this.#options.computerId,
+        deviceId,
       })
-      if (isWrite) this.#store.complete(commandId, result)
+      if (token !== undefined) this.#store.complete(token, result)
       return { status: 'accepted', commandId, result }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)

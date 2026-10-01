@@ -89,9 +89,68 @@ class NativeUiTest {
         awaitText("整理下载目录中的 PDF")
         compose.onNodeWithText("整理下载目录中的 PDF").performClick()
 
-        // The bug this guards: the messages rendered at zero height and the
-        // screen looked empty while the drawing code was correct.
         awaitText("找到了 30 个 PDF")
+
+        // `assertIsDisplayed`, not just "the node exists". The bug this guards
+        // against was messages laid out at zero height: the semantics tree had
+        // them, so presence checks passed while the screen was blank. Only a
+        // display assertion catches that.
+        // The actual first user message. An invented string here failed the
+        // assertion and was the test's fault, not the app's — which is why the
+        // fixture's text is quoted rather than paraphrased.
+        compose.onNodeWithText("先给我分类预览", substring = true).assertIsDisplayed()
+        compose.onNodeWithText("找到了 30 个 PDF", substring = true).assertIsDisplayed()
+        compose.onNodeWithText("正在读取文件内容", substring = true).assertIsDisplayed()
+
         compose.onNodeWithText("发消息或创建任务…", substring = true).assertIsDisplayed()
+    }
+
+    /**
+     * The composer must stay on screen when the keyboard opens.
+     *
+     * A chat input that the keyboard covers is unusable, and the failure is
+     * invisible to any test that never opens the keyboard.
+     */
+    @Test
+    fun the_composer_stays_visible_with_the_keyboard_open() {
+        compose.onNodeWithTag(NavTagTasks).performClick()
+        awaitText("整理下载目录中的 PDF")
+        compose.onNodeWithText("整理下载目录中的 PDF").performClick()
+        awaitText("发消息或创建任务…")
+
+        compose.onNodeWithText("发消息或创建任务…", substring = true).performClick()
+        compose.waitForIdle()
+
+        // Still displayed after the IME claims the bottom of the screen.
+        compose.onNodeWithText("发消息或创建任务…", substring = true).assertIsDisplayed()
+        compose.onNodeWithText("发送").assertIsDisplayed()
+    }
+
+    /**
+     * A task whose approval is pending opens the approval screen, not the
+     * conversation: the user's next action is to decide, not to read.
+     */
+    @Test
+    fun a_pending_approval_opens_the_approval_screen() {
+        compose.onNodeWithTag(NavTagTasks).performClick()
+        awaitText("把季度报表转成 PDF")
+        compose.onNodeWithText("把季度报表转成 PDF").performClick()
+
+        awaitText("展开原始命令")
+        compose.onNodeWithText("允许一次").assertIsDisplayed()
+        compose.onNodeWithText("拒绝").assertIsDisplayed()
+    }
+
+    /**
+     * The approval impact must not claim to have analysed anything.
+     *
+     * An earlier version hardcoded "will not delete any files", which is a
+     * promise no code was making.
+     */
+    @Test
+    fun the_approval_does_not_pretend_to_have_analysed_the_impact() {
+        compose.onNodeWithTag(NavTagApprovals).performClick()
+        awaitText("影响分析尚未接入")
+        compose.onNodeWithText("影响分析尚未接入", substring = true).assertIsDisplayed()
     }
 }

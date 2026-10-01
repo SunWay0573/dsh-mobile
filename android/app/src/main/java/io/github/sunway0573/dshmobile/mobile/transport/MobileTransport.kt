@@ -15,8 +15,14 @@ import org.json.JSONObject
  */
 internal interface MobileTransport {
 
-    /** Ask a computer what it is and what this phone may do. */
-    suspend fun status(): TransportResult<ComputerStatus>
+    /**
+     * Ask a computer what it is and what this phone may do.
+     *
+     * @param deviceId which paired device is asking. The computer reports the
+     *   scopes belonging to this device, and checks them again on every later
+     *   request — so a revocation takes effect without the phone being told.
+     */
+    suspend fun status(deviceId: String): TransportResult<ComputerStatus>
 
     /** Send a command and get its outcome. */
     suspend fun command(
@@ -73,7 +79,10 @@ internal class FixtureTransport(
     override val endpoint: String = "fixture://local",
 ) : MobileTransport {
 
-    override suspend fun status(): TransportResult<ComputerStatus> = statusReply
+    /** Device ids this fixture accepts, so a test can exercise "not paired". */
+    var knownDevices: Set<String> = setOf("fixture-device")
+
+    override suspend fun status(deviceId: String): TransportResult<ComputerStatus> = statusReply
 
     override suspend fun command(
         commandId: String,

@@ -29,7 +29,7 @@
   },
   "scripts": {
     "build": "tsc -b",
-    "test": "node --test test/*.test.ts"
+    "test": "node --test \"test/**/*.test.ts\""
   },
   "dependencies": {
     "@deepseek-ai/schemastery": "^3.18.4"

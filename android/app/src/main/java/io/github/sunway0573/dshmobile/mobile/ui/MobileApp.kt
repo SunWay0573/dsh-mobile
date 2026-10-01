@@ -77,7 +77,7 @@ internal sealed interface Route {
 @Composable
 internal fun MobileApp(
     state: UiState,
-    computerState: ComputerState,
+    computerStates: Map<String, ComputerState>,
     wakeConfig: WakeConfig,
     onSaveWakeConfig: (WakeConfig) -> Unit,
     onOpenLegacyWebView: () -> Unit,
@@ -91,6 +91,11 @@ internal fun MobileApp(
 
     val computers = DemoData.computers
     val selected = computers.firstOrNull { it.computerId == selectedComputerId } ?: computers.first()
+    // The state of the computer being looked at, not of "the" computer. Two
+    // machines can be on different versions with different grants, so a single
+    // shared state would show one's permissions while talking to the other.
+    val computerState: ComputerState =
+        computerStates[selected.computerId] ?: ComputerState.Offline("尚未连接")
     val pendingForSelected = DemoData.tasks.count {
         it.target.computerId == selected.computerId &&
             it.status == DemoData.TaskStatus.WAITING_APPROVAL

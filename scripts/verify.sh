@@ -188,8 +188,13 @@ if selected plugins; then
     run "plugins are structurally loadable by a DSH host" node scripts/check-plugins.mjs
 
     run "plugins build" bash -c 'cd plugins && pnpm run build'
-    run "sleep-guard tests" bash -c 'cd plugins/sleep-guard && node --test test/*.test.ts'
-    run "mobile-bridge tests" bash -c 'cd plugins/mobile-bridge && node --test test/*.test.ts'
+    # The subprojects own their test globs. Hard-coding a single-level pattern
+    # here meant a new test subdirectory was silently not run: this round added
+    # 39 tests under test/mobile/ and verify kept reporting green without them.
+    # Running each project's own `test` script keeps the two in step, because
+    # that script is the one a developer runs by hand.
+    run "sleep-guard tests" bash -c 'cd plugins/sleep-guard && npm test --silent'
+    run "mobile-bridge tests" bash -c 'cd plugins/mobile-bridge && npm test --silent'
   fi
 fi
 

@@ -45,6 +45,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowCompat
+import io.github.sunway0573.dshmobile.mobile.demo.DemoData
 import io.github.sunway0573.dshmobile.mobile.protocol.ComputerStatus
 import io.github.sunway0573.dshmobile.mobile.protocol.MobileProtocol
 import io.github.sunway0573.dshmobile.mobile.protocol.Operation
@@ -382,34 +383,49 @@ private fun DshMobileApp(
     // 按计划，独立设备授权版本落地时这个入口会被彻底移除。
     // 协商结果驱动界面状态。
     //
-    // 目前背后是一个固定装置：真实传输属于工作包3 的下一段。但这条路径本身是真的——
-    // 状态由 MobileAdapter 的应答经 negotiate() 算出，而不是写死的 UiState.NORMAL。
-    // 诊断页显示的版本号和能力数就来自这里，所以如果协商逻辑坏了，它会显示出来，
-    // 而不是继续显示一个好看的数字。
-    var negotiated by remember { mutableStateOf<ComputerState>(ComputerState.Offline("尚未连接")) }
-    val repository = remember {
-        SessionRepository(
-            FixtureTransport(
-                TransportResult.Ok(
-                    ComputerStatus(
-                        protocolVersion = MobileProtocol.VERSION,
-                        adapterVersion = "1.0.0",
-                        hostVersion = "0.2.0-rc.2（示例）",
-                        computerId = "demo-mac",
-                        computerName = "我的 Mac",
-                        capabilities = Operation.entries.toSet(),
-                        grantedScopes = Scope.entries.toSet(),
+    // 每台电脑一个 repository。复核指出原实现只有固定的一台 demo-mac：
+    // 真实接线时那会变成"切换电脑后仍在用另一台的权限"——多电脑隔离最危险的形态，
+    // 因为两台不同版本的电脑能力不同、授权也不同。
+    //
+    // 目前背后是固定装置（真实传输属工作包3 下一段），但"按 computerId 分别持有"
+    // 这条结构是真的。
+    val repositories = remember {
+        DemoData.computers.associate { computer ->
+            computer.computerId to SessionRepository(
+                transport = FixtureTransport(
+                    TransportResult.Ok(
+                        ComputerStatus(
+                            protocolVersion = MobileProtocol.VERSION,
+                            supportedProtocols = MobileProtocol.SUPPORTED_VERSIONS,
+                            adapterVersion = BuildConfig.MOBILE_ADAPTER_VERSION,
+                            hostVersion = "0.2.0-rc.2（示例）",
+                            computerId = computer.computerId,
+                            computerName = computer.alias,
+                            capabilities = Operation.entries.toSet(),
+                            grantedScopes = Scope.entries.toSet(),
+                        ),
                     ),
+                    endpoint = computer.primaryEndpoint ?: "fixture://${computer.computerId}",
                 ),
-            ),
+                // 每台电脑各自的设备身份。共用会意味着撤销一台会连带影响另一台。
+                deviceId = "fixture-device-${computer.computerId}",
+            )
+        }
+    }
+    var negotiated by remember {
+        mutableStateOf<Map<String, ComputerState>>(
+            repositories.keys.associateWith { ComputerState.Offline("尚未连接") },
         )
     }
-    LaunchedEffect(repository) { negotiated = repository.refresh() }
+    LaunchedEffect(repositories) {
+        negotiated = repositories.mapValues { (_, repository) -> repository.refresh() }
+    }
+
 
     when (screen) {
         Screen.Home -> MobileApp(
             state = UiState.NORMAL,
-            computerState = negotiated,
+            computerStates = negotiated,
             wakeConfig = settings.wakeConfig,
             onSaveWakeConfig = { settings.saveWakeConfig(it) },
             onOpenLegacyWebView = {
