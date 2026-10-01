@@ -244,7 +244,7 @@ tool; everything in the table below is implemented, tested and pushed.
 | `plugins/sleep-guard` | ✅ work-aware sleep inhibition | 54 |
 | `plugins/mobile-bridge` | ✅ push, privacy curtain, wake trigger | 68 |
 | `wol-bridge` | ✅ magic packets + HTTP endpoint | 73 |
-| Android app | ✅ builds; APK + 55 unit tests verified locally | 55 |
+| Android app | ✅ debug **and release** build; APK + 55 unit tests verified locally | 55 |
 | Releases | ✅ [`v0.1.0-pre`](https://github.com/SunWay0573/dsh-mobile/releases/tag/v0.1.0-pre), debug-signed APK | — |
 | CI | ⏸ written and on `ci-workflow`; run [`scripts/enable-ci.sh`](scripts/enable-ci.sh) | — |
 
@@ -256,8 +256,14 @@ no typecheck or unit test could see. Both are now checked automatically:
 [`scripts/verify-integration.sh`](scripts/verify-integration.sh) by doing it.
 
 The Android app has been built against a real SDK —
-`BUILD SUCCESSFUL`, a 10.7 MB debug APK, and its 55 unit tests passing — so it
-is verified rather than merely written.
+`BUILD SUCCESSFUL` for both variants, a 10.7 MB debug APK, a 7.5 MB release APK,
+and its 55 unit tests passing — so it is verified rather than merely written.
+
+The release APK is checked **as an artifact**, not as source. Release builds
+rename resources, so the network security config has to be resolved from the
+manifest attribute through the resource table to whatever path the packager
+chose — in this project's own release APK that is `res/8G.xml`. Reading a named
+file out of `src/main/res/` proves what was written; this proves what ships.
 
 The CI workflow is written and lives on the `ci-workflow` branch. GitHub refuses
 to let an OAuth app push `.github/workflows/` without the `workflow` scope — a

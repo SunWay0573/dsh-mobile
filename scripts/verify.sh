@@ -228,6 +228,34 @@ CHECK
     else
       bad "APK produced"
     fi
+
+    # The release variant is the one that ships, and until this ran it had never
+    # been built -- only asserted about, from the source XML. Building it proves
+    # the release toolchain, the proguard files and the resource merge produce an
+    # artifact at all, and a release-only failure is the worst kind to find at
+    # release time.
+    run "assemble release APK" bash -c 'cd android && ./gradlew assembleRelease --no-daemon --quiet'
+    release_apk="$(compgen -G "android/app/build/outputs/apk/release/*.apk" | head -1)"
+    if [[ -z "$release_apk" ]]; then
+      bad "release APK produced"
+    else
+      ok "release APK produced"
+      # Read the policy out of the artifact rather than out of the source. The
+      # source says what was written; the APK says what ships. Release builds
+      # rename resources, so this resolves it through the manifest attribute and
+      # the resource table -- in this project's own release APK it lands at
+      # res/8G.xml and cannot be found by name.
+      # No `set -e` juggling here: this script deliberately does not run under
+      # errexit, so a non-zero status simply lands in $? as usual.
+      python3 scripts/check-cleartext.py "$release_apk" false >/dev/null 2>&1
+      cleartext_rc=$?
+      case $cleartext_rc in
+        0) ok "the release APK refuses cleartext" ;;
+        2) if [[ $STRICT -eq 1 ]]; then bad "could not read the release APK's cleartext policy"
+           else skip "release cleartext policy" "no aapt2"; fi ;;
+        *) bad "the release APK permits cleartext" ;;
+      esac
+    fi
   fi
 fi
 
