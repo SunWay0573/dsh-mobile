@@ -27,12 +27,16 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import io.github.sunway0573.dshmobile.R
 import io.github.sunway0573.dshmobile.mobile.demo.DemoData
+
+/** Tag for the conversation input field. See its use for why. */
+internal const val ComposerFieldTag = "composer_field"
 
 /**
  * The task list for one computer.
@@ -47,6 +51,8 @@ internal fun TasksScreen(
     computerId: String,
     computerAlias: String,
     state: UiState,
+    submitGate: Gate,
+    cancelGate: Gate,
     onBack: () -> Unit,
     onNewTask: () -> Unit,
     onOpenTask: (String) -> Unit,
@@ -60,9 +66,14 @@ internal fun TasksScreen(
             // Always reachable, not only from the empty state. Someone with nine
             // tasks is more likely to want a tenth than someone with none.
             action = {
-                TextButton(onClick = onNewTask, modifier = MinTouchTarget) {
-                    Text(stringResource(R.string.tasks_new))
-                }
+                // Disabled rather than hidden, with the reason shown below the
+                // list: a control that vanishes leaves the user wondering
+                // whether they misremembered.
+                TextButton(
+                    onClick = onNewTask,
+                    enabled = submitGate is Gate.Allowed,
+                    modifier = MinTouchTarget,
+                ) { Text(stringResource(R.string.tasks_new)) }
             },
         )
         Column(Modifier.padding(horizontal = 12.dp)) {
@@ -76,9 +87,11 @@ internal fun TasksScreen(
                     title = stringResource(R.string.tasks_empty_title),
                     body = stringResource(R.string.tasks_empty_body),
                 ) {
-                    Button(onClick = onNewTask, modifier = MinTouchTarget) {
-                        Text(stringResource(R.string.tasks_new))
-                    }
+                    GatedButton(
+                        label = stringResource(R.string.tasks_new),
+                        gate = submitGate,
+                        onClick = onNewTask,
+                    )
                 }
 
                 UiState.ERROR -> {
@@ -171,6 +184,7 @@ internal fun TasksScreen(
 internal fun ConversationScreen(
     computerAlias: String,
     state: UiState,
+    sendGate: Gate,
     onBack: () -> Unit,
     onMore: () -> Unit,
 ) {
@@ -281,7 +295,11 @@ internal fun ConversationScreen(
                     draft = ""
                 }
             },
-            enabled = state != UiState.OFFLINE && state != UiState.ERROR,
+            // Both conditions: the screen's own connectivity state and what
+            // this phone is actually permitted to send here.
+            enabled = state != UiState.OFFLINE && state != UiState.ERROR &&
+                sendGate is Gate.Allowed,
+            gate = sendGate,
         )
     }
 }
@@ -343,6 +361,7 @@ private fun Composer(
     onDraftChange: (String) -> Unit,
     onSend: () -> Unit,
     enabled: Boolean,
+    gate: Gate,
 ) {
     Row(
         Modifier
@@ -357,12 +376,23 @@ private fun Composer(
             enabled = enabled,
             placeholder = { Text(stringResource(R.string.conv_placeholder)) },
             maxLines = 4,
-            modifier = Modifier.weight(1f),
+            // Tagged so a test can click the field itself. Clicking its
+            // placeholder text does not give it focus, and a keyboard test whose
+            // click never focused anything proves nothing about the keyboard.
+            modifier = Modifier.weight(1f).testTag(ComposerFieldTag),
         )
         Button(
             onClick = onSend,
             enabled = enabled && draft.isNotBlank(),
             modifier = MinTouchTarget,
         ) { Text(stringResource(R.string.conv_send)) }
+    }
+    gateReason(gate)?.let { reason ->
+        Text(
+            reason,
+            style = MaterialTheme.typography.bodySmall,
+            color = MobileColors.Warn,
+            modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 10.dp),
+        )
     }
 }

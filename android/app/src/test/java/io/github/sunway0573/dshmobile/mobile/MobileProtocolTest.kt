@@ -7,6 +7,9 @@ import io.github.sunway0573.dshmobile.mobile.protocol.Negotiation
 import io.github.sunway0573.dshmobile.mobile.protocol.Operation
 import io.github.sunway0573.dshmobile.mobile.protocol.Refusal
 import io.github.sunway0573.dshmobile.mobile.protocol.Scope
+import io.github.sunway0573.dshmobile.mobile.protocol.StatusParseResult
+import org.json.JSONArray
+import org.junit.Assert.assertNotEquals
 import io.github.sunway0573.dshmobile.mobile.protocol.encodeCommand
 import io.github.sunway0573.dshmobile.mobile.protocol.negotiate
 import io.github.sunway0573.dshmobile.mobile.protocol.selectProtocolVersion
@@ -164,7 +167,7 @@ class AvailabilityTest {
             .put("computerId", "pc-1")
             .put("capabilities", org.json.JSONArray(listOf("computer.status", "host.reboot", "quantum.entangle")))
             .put("grantedScopes", org.json.JSONArray(listOf("sessions.read")))
-        val parsed = parseStatus(json)
+        val parsed = parsed(json)
         assertNotNull(parsed)
         assertEquals(setOf(Operation.ComputerStatus), parsed!!.capabilities)
     }
@@ -176,7 +179,7 @@ class AvailabilityTest {
             .put("computerId", "pc-1")
             .put("capabilities", org.json.JSONArray(listOf("computer.status")))
             .put("grantedScopes", org.json.JSONArray(listOf("sessions.read", "root.everything")))
-        assertEquals(setOf(Scope.SessionsRead), parseStatus(json)!!.grantedScopes)
+        assertEquals(setOf(Scope.SessionsRead), parsed(json)!!.grantedScopes)
     }
 }
 
@@ -257,10 +260,21 @@ class CommonVersionTest {
 
     @Test
     fun a_command_is_encoded_with_the_agreed_version() {
-        val json = encodeCommand("pc-1", "c-1", Operation.SessionList, null, protocolVersion = 7)
+        val json = encodeCommand(
+            computerId = "pc-1",
+            deviceId = "dev-1",
+            commandId = "c-1",
+            operation = Operation.SessionList,
+            payload = null,
+            protocolVersion = 7,
+        )
         assertEquals(7, json.getInt("protocolVersion"))
     }
 }
+
+/** Unwrap a successful parse, for tests that only care about the happy path. */
+private fun parsed(json: org.json.JSONObject): ComputerStatus? =
+    (parseStatus(json) as? StatusParseResult.Ok)?.status
 
 class StatusParsingTest {
 
@@ -275,7 +289,7 @@ class StatusParsingTest {
             .put("capabilities", org.json.JSONArray(listOf("computer.status", "session.list")))
             .put("grantedScopes", org.json.JSONArray(listOf("sessions.read")))
 
-        val parsed = parseStatus(json)!!
+        val parsed = parsed(json)!!
         assertEquals("pc-1", parsed.computerId)
         assertEquals("我的 Mac", parsed.computerName)
         assertEquals("0.2.0-rc.2", parsed.hostVersion)
@@ -288,33 +302,195 @@ class StatusParsingTest {
     @Test
     fun a_status_without_a_protocol_version_is_rejected() {
         val json = JSONObject().put("computerId", "pc-1")
-        assertNull(parseStatus(json))
+        assertTrue(parseStatus(json) is StatusParseResult.Malformed)
     }
 
     @Test
     fun a_status_without_a_computer_id_is_rejected() {
         val json = JSONObject().put("protocolVersion", 1)
-        assertNull(parseStatus(json))
+        assertTrue(parseStatus(json) is StatusParseResult.Malformed)
     }
 
     @Test
     fun a_zero_or_negative_protocol_version_is_rejected() {
-        assertNull(parseStatus(JSONObject().put("protocolVersion", 0).put("computerId", "p")))
-        assertNull(parseStatus(JSONObject().put("protocolVersion", -3).put("computerId", "p")))
+        assertTrue(
+            parseStatus(JSONObject().put("protocolVersion", 0).put("computerId", "p"))
+                is StatusParseResult.Malformed,
+        )
+        assertTrue(
+            parseStatus(JSONObject().put("protocolVersion", -3).put("computerId", "p"))
+                is StatusParseResult.Malformed,
+        )
     }
 
     @Test
     fun a_missing_name_falls_back_to_the_id_rather_than_blank() {
         val json = JSONObject().put("protocolVersion", 1).put("computerId", "pc-1")
-        assertEquals("pc-1", parseStatus(json)!!.computerName)
+        assertEquals("pc-1", parsed(json)!!.computerName)
     }
 
     @Test
     fun missing_capability_lists_are_empty_not_fatal() {
         val json = JSONObject().put("protocolVersion", 1).put("computerId", "pc-1")
-        val parsed = parseStatus(json)!!
+        val parsed = parsed(json)!!
         assertTrue(parsed.capabilities.isEmpty())
         assertTrue(parsed.grantedScopes.isEmpty())
+    }
+}
+
+/**
+ * Strict reading of the handshake.
+ *
+ * The review drove the compiled parser with three malformed `supportedProtocols`
+ * values and got `Ready` for all three — the parser *repaired* each one into
+ * compatibility. An error that becomes "compatible" is worse than an error,
+ * because nothing downstream can tell it happened.
+ */
+class StrictVersionParsingTest {
+
+    private fun reply(supported: Any?): JSONObject = JSONObject().apply {
+        put("protocolVersion", 1)
+        put("computerId", "pc-1")
+        put("capabilities", JSONArray(listOf("session.list")))
+        put("grantedScopes", JSONArray(listOf("sessions.read")))
+        if (supported != null) put("supportedProtocols", supported)
+    }
+
+    // `[]` — a computer that declares nothing is broken, not compatible.
+    @Test
+    fun an_empty_version_list_is_malformed_not_inferred() {
+        val result = parseStatus(reply(JSONArray()))
+        assertTrue(result is StatusParseResult.Malformed)
+        assertTrue((result as StatusParseResult.Malformed).detail.contains("空数组"))
+    }
+
+    // `[1.9]` — truncating a non-integer version fabricates agreement.
+    @Test
+    fun a_non_integer_version_is_rejected_not_truncated() {
+        val result = parseStatus(reply(JSONArray(listOf(1.9))))
+        assertTrue(result is StatusParseResult.Malformed)
+    }
+
+    // `"invalid"` — a field of the wrong type means the two ends already
+    // disagree about the protocol.
+    @Test
+    fun a_wrong_field_type_is_rejected_not_treated_as_a_legacy_handshake() {
+        val result = parseStatus(reply("invalid"))
+        assertTrue(result is StatusParseResult.Malformed)
+        assertTrue((result as StatusParseResult.Malformed).detail.contains("不是数组"))
+    }
+
+    @Test
+    fun a_string_version_element_is_rejected() {
+        assertTrue(parseStatus(reply(JSONArray(listOf("1")))) is StatusParseResult.Malformed)
+    }
+
+    @Test
+    fun a_zero_or_negative_version_is_rejected() {
+        assertTrue(parseStatus(reply(JSONArray(listOf(0)))) is StatusParseResult.Malformed)
+        assertTrue(parseStatus(reply(JSONArray(listOf(-1)))) is StatusParseResult.Malformed)
+    }
+
+    @Test
+    fun a_null_field_is_treated_as_absent() {
+        assertTrue(parseStatus(reply(JSONObject.NULL)) is StatusParseResult.Ok)
+    }
+
+    /**
+     * The one permitted compatibility branch. A field that is entirely absent
+     * is a legacy single-version handshake — and it is written as its own rule
+     * precisely because sharing a branch with the errors above is how an error
+     * becomes "compatible".
+     */
+    @Test
+    fun an_absent_list_falls_back_to_the_declared_single_version() {
+        val result = parseStatus(reply(null))
+        assertTrue(result is StatusParseResult.Ok)
+        assertEquals(setOf(1), (result as StatusParseResult.Ok).status.supportedProtocols)
+    }
+
+    @Test
+    fun a_fractional_protocol_version_is_rejected() {
+        val json = reply(JSONArray(listOf(1)))
+        json.put("protocolVersion", 1.5)
+        assertTrue(parseStatus(json) is StatusParseResult.Malformed)
+    }
+
+    @Test
+    fun a_string_protocol_version_is_rejected() {
+        val json = reply(JSONArray(listOf(1)))
+        json.put("protocolVersion", "1")
+        assertTrue(parseStatus(json) is StatusParseResult.Malformed)
+    }
+
+    // A well-formed multi-version list is read as written.
+    @Test
+    fun a_valid_multi_version_list_is_kept() {
+        val result = parseStatus(reply(JSONArray(listOf(1, 2, 3))))
+        assertEquals(
+            setOf(1, 2, 3),
+            (result as StatusParseResult.Ok).status.supportedProtocols,
+        )
+    }
+}
+
+/**
+ * The two ends must fit together.
+ *
+ * The review's counterexample: the phone's encoder produced an envelope with no
+ * `deviceId`, and the computer's adapter answered `UNAUTHENTICATED`. Each side
+ * passed its own tests. This checks the encoder's actual output against the
+ * field the computer requires, in one place.
+ */
+class CrossLanguageContractTest {
+
+    @Test
+    fun the_encoded_command_carries_every_field_the_computer_requires() {
+        val json = encodeCommand(
+            computerId = "pc-1",
+            deviceId = "phone-7",
+            commandId = "cmd-1",
+            operation = Operation.SessionList,
+            payload = null,
+            protocolVersion = 1,
+        )
+        // These are exactly the fields the TS CommandEnvelope declares, and
+        // `deviceId` is one the encoder used to omit.
+        for (field in listOf("protocolVersion", "computerId", "deviceId", "commandId", "operation")) {
+            assertTrue("the wire form must carry $field", json.has(field))
+        }
+        assertEquals("phone-7", json.getString("deviceId"))
+    }
+
+    @Test
+    fun the_encoded_version_is_the_negotiated_one_and_not_a_constant() {
+        val json = encodeCommand(
+            computerId = "pc-1",
+            deviceId = "phone-7",
+            commandId = "cmd-1",
+            operation = Operation.SessionList,
+            payload = null,
+            protocolVersion = 42,
+        )
+        assertEquals(42, json.getInt("protocolVersion"))
+        assertNotEquals(
+            "a default would silently send a version the ends did not agree on",
+            MobileProtocol.VERSION,
+            json.getInt("protocolVersion"),
+        )
+    }
+
+    @Test
+    fun the_operation_is_the_wire_name_not_the_kotlin_name() {
+        val json = encodeCommand(
+            computerId = "pc-1",
+            deviceId = "phone-7",
+            commandId = "cmd-1",
+            operation = Operation.SessionPage,
+            payload = JSONObject().put("sessionId", "s-1"),
+            protocolVersion = 1,
+        )
+        assertEquals("session.page", json.getString("operation"))
     }
 }
 
@@ -322,7 +498,14 @@ class CommandEncodingTest {
 
     @Test
     fun a_command_carries_the_protocol_version_and_target() {
-        val json = encodeCommand("pc-1", "cmd-1", Operation.TaskSubmit, JSONObject().put("text", "hi"))
+        val json = encodeCommand(
+            computerId = "pc-1",
+            deviceId = "dev-1",
+            commandId = "cmd-1",
+            operation = Operation.TaskSubmit,
+            payload = JSONObject().put("text", "hi"),
+            protocolVersion = MobileProtocol.VERSION,
+        )
         assertEquals(MobileProtocol.VERSION, json.getInt("protocolVersion"))
         assertEquals("pc-1", json.getString("computerId"))
         assertEquals("cmd-1", json.getString("commandId"))
@@ -332,7 +515,14 @@ class CommandEncodingTest {
 
     @Test
     fun a_command_without_a_payload_omits_the_field() {
-        val json = encodeCommand("pc-1", "cmd-1", Operation.SessionList, null)
+        val json = encodeCommand(
+            computerId = "pc-1",
+            deviceId = "dev-1",
+            commandId = "cmd-1",
+            operation = Operation.SessionList,
+            payload = null,
+            protocolVersion = MobileProtocol.VERSION,
+        )
         assertFalse(json.has("payload"))
     }
 }

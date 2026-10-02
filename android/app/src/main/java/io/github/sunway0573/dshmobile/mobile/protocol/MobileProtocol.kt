@@ -15,8 +15,8 @@ import org.json.JSONObject
  * Harness versions without a branch per version.
  *
  * Pure Kotlin with no Android imports, so all of it is JVM testable. The parts
- * worth testing are the ones that go wrong quietly: version negotiation, and
- * which operations are genuinely available.
+ * worth testing are the ones that go wrong quietly: version negotiation,
+ * contract parsing, and which operations are genuinely available.
  */
 internal object MobileProtocol {
 
@@ -30,11 +30,11 @@ internal object MobileProtocol {
     const val VERSION = 1
 
     /**
-     * 这个手机端会说的协议版本。
+     * Every version this phone can speak.
      *
-     * 是列表而不是单个常量：协商需要两边各拿一个列表求交集。
-     * 只说一个值、却在别处接受另一个值，就会出现"按握手报告发过去的请求被握手方自己拒绝"——
-     * 这正是复核复现的那个缺陷。
+     * A set rather than a constant, because negotiation needs two lists to
+     * intersect. Reporting one value while accepting another is how a client
+     * ends up being refused by the end that told it what to send.
      */
     val SUPPORTED_VERSIONS: Set<Int> = setOf(1)
 
@@ -95,8 +95,9 @@ internal val OPERATION_SCOPE: Map<Operation, Scope> = mapOf(
 
 /** What the computer says about itself and what this phone may do. */
 internal data class ComputerStatus(
+    /** The version this reply is written in. */
     val protocolVersion: Int,
-    /** 电脑端能说的全部版本，供手机自行选择，而不是只能相信单个值。 */
+    /** Every version the computer says it can speak. */
     val supportedProtocols: Set<Int>,
     val adapterVersion: String,
     val hostVersion: String,
@@ -105,6 +106,37 @@ internal data class ComputerStatus(
     val capabilities: Set<Operation>,
     val grantedScopes: Set<Scope>,
 )
+
+/**
+ * The outcome of parsing a handshake reply.
+ *
+ * A result type rather than a nullable value: `null` cannot distinguish "field
+ * missing" from "wrong type" from "malformed version", and those tell a user
+ * different things. More importantly, an earlier version *repaired* malformed
+ * values into compatibility — the review demonstrated exactly that.
+ */
+internal sealed interface StatusParseResult {
+    data class Ok(val status: ComputerStatus) : StatusParseResult
+    data class Malformed(val detail: String) : StatusParseResult
+}
+
+/**
+ * Read a strictly positive integer.
+ *
+ * `optInt` truncates `1.9` to `1` and converts `"1"` to `1`. For a version
+ * number that is not convenience, it is fabrication: a computer saying `1.9`
+ * becomes a computer saying `1`, and both ends then believe they agree. Every
+ * type is checked and nothing is coerced.
+ */
+private fun JSONObject.strictPositiveInt(key: String): Int? {
+    val raw = opt(key) ?: return null
+    val value = when (raw) {
+        is Int -> raw
+        is Long -> if (raw in Int.MIN_VALUE..Int.MAX_VALUE) raw.toInt() else return null
+        else -> return null
+    }
+    return if (value > 0) value else null
+}
 
 /**
  * The outcome of connecting.
@@ -119,6 +151,8 @@ internal sealed interface Negotiation {
     /**
      * Usable, possibly with fewer operations than this build implements.
      *
+     * @param protocolVersion the version both ends agreed on. Requests are
+     *   encoded with this, not with a constant.
      * @param available the intersection of what the phone implements, what the
      *   computer advertises, and what this device was granted. Everything the UI
      *   offers comes from here — and is still checked again on the computer,
@@ -128,7 +162,6 @@ internal sealed interface Negotiation {
      */
     data class Ready(
         val status: ComputerStatus,
-        /** 双方共同选定的版本。界面和请求编码都用它，不是各自写死的常量。 */
         val protocolVersion: Int,
         val available: Set<Operation>,
         val unavailableKnown: Set<Operation>,
@@ -148,36 +181,33 @@ internal sealed interface Negotiation {
  * Which end needs updating.
  *
  * Four cases with four different fixes, and telling a user the wrong one wastes
- * their afternoon. Note that none of them is "retry": a version mismatch does
- * not resolve itself, and presenting it as a network problem is the specific
- * mistake this type exists to prevent.
+ * their afternoon. None of them is "retry": a version mismatch does not resolve
+ * itself, and presenting it as a network problem is the specific mistake this
+ * type exists to prevent.
  */
 internal enum class Incompatibility {
-    /** The computer speaks a newer protocol than this app. The app needs updating. */
+    /** The computer speaks newer versions than this app. The app needs updating. */
     CLIENT_TOO_OLD,
 
-    /** The computer speaks an older protocol. Its plugin needs updating. */
+    /** The computer speaks only older versions. Its plugin needs updating. */
     COMPUTER_TOO_OLD,
+
+    /** Neither end is strictly newer; there is simply no overlap. */
+    NO_COMMON_VERSION,
 
     /** The protocol matches but the computer offers nothing phone and grant allow. */
     NO_USABLE_OPERATIONS,
-
-    /**
-     * 两边没有任何共同版本。
-     *
-     * 与"电脑太新"和"电脑太旧"都不同：那两种能指出该更新哪一端，
-     * 而这种只能说明两端都落后于对方，无法从手机单方面判断谁该动。
-     */
-    NO_COMMON_VERSION,
 }
 
 /**
- * 选出双方都支持的最高协议版本。
+ * Choose the highest protocol version both ends speak.
  *
- * 取最高而不是最低：两个列表都按能力递增，共享的最高版本能力最多。
+ * Highest rather than lowest: both lists are ordered by capability, so the
+ * newest shared version is the one with the most of it.
  *
- * @return 选中的版本；没有共同版本时返回 null。调用方必须把 null 当作不兼容，
- *   绝不能"先用我们自己的试试"——那正是把不兼容变成运行期失败的做法。
+ * @return the chosen version, or null when there is none. The caller must treat
+ *   null as incompatible — never as "try ours and see", which is what turns a
+ *   version mismatch into a runtime failure.
  */
 internal fun selectProtocolVersion(
     serverVersions: Set<Int>,
@@ -187,13 +217,13 @@ internal fun selectProtocolVersion(
 /**
  * Decide whether a status reply is usable, and what it permits.
  *
- * @param raw the decoded reply.
  * @returns the negotiation outcome; never null, so a caller cannot forget the
  *   failure case and treat an empty result as success.
  */
 internal fun negotiate(raw: ComputerStatus): Negotiation {
-    // 用两边各自声明的列表求共同版本，而不是拿单个数字和常量比。
-    // 后者在电脑端支持多个版本时会得出错误结论。
+    // Intersect two declared lists rather than comparing one number against a
+    // constant. The latter gives the wrong answer as soon as a computer speaks
+    // more than one version.
     val agreed = selectProtocolVersion(raw.supportedProtocols)
 
     if (agreed == null) {
@@ -248,16 +278,41 @@ internal fun negotiate(raw: ComputerStatus): Negotiation {
     )
 }
 
-/** Encode a command for the wire. */
+/**
+ * Encode a command for the wire.
+ *
+ * ## Why `deviceId` is a required parameter
+ *
+ * An earlier version neither accepted nor encoded it, while the computer lists
+ * it as required and answers `UNAUTHENTICATED` without it. Both ends passed
+ * their own tests and did not fit together; the review proved it with one
+ * counterexample. There is no default, so forgetting it is a compile error
+ * rather than a rejected request.
+ *
+ * ## `deviceId` is an identifier, not a credential
+ *
+ * It says which paired device this command *claims* to come from. The actual
+ * authentication is the connection's credential, and the computer passes the
+ * device identity it authenticated into the adapter as trusted context. Adding
+ * a self-declared field is **not** authentication: anyone who can send a request
+ * can put someone else's id in it. The computer must check that the claimed id
+ * matches the authenticated connection.
+ *
+ * `protocolVersion` is required for the same reason: the negotiated version has
+ * to be the one on the wire, and a default would silently send a version the two
+ * ends did not agree on.
+ */
 internal fun encodeCommand(
     computerId: String,
+    deviceId: String,
     commandId: String,
     operation: Operation,
     payload: JSONObject?,
-    protocolVersion: Int = MobileProtocol.VERSION,
+    protocolVersion: Int,
 ): JSONObject = JSONObject().apply {
     put("protocolVersion", protocolVersion)
     put("computerId", computerId)
+    put("deviceId", deviceId)
     put("commandId", commandId)
     put("operation", operation.wire)
     if (payload != null) put("payload", payload)
@@ -266,44 +321,98 @@ internal fun encodeCommand(
 /**
  * Read a status reply.
  *
- * @returns the status, or null when a required field is missing. A partial
- *   status is not repaired with defaults: an absent `protocolVersion` cannot be
- *   assumed to be this build's, and guessing would turn "the computer said
- *   something we do not understand" into "the computer is fine".
+ * See {@link StatusParseResult} for why this is not nullable.
  */
-internal fun parseStatus(json: JSONObject): ComputerStatus? {
-    if (!json.has("protocolVersion")) return null
-    val protocolVersion = json.optInt("protocolVersion", -1)
-    if (protocolVersion <= 0) return null
+internal fun parseStatus(json: JSONObject): StatusParseResult {
+    val protocolVersion = json.strictPositiveInt("protocolVersion")
+        ?: return StatusParseResult.Malformed(
+            "回复里的 protocolVersion 缺失、不是正整数、或不是数字类型。" +
+                "不能假设它是本机支持的版本。",
+        )
 
-    val computerId = json.optString("computerId").takeIf { it.isNotBlank() } ?: return null
+    val computerId = json.optString("computerId").takeIf { it.isNotBlank() }
+        ?: return StatusParseResult.Malformed("回复里没有 computerId。")
 
-    return ComputerStatus(
-        protocolVersion = protocolVersion,
-        supportedProtocols = json.optJSONArray("supportedProtocols")
-            .toIntSet()
-            .ifEmpty { setOf(protocolVersion) },
-        adapterVersion = json.optString("adapterVersion", ""),
-        hostVersion = json.optString("hostVersion", ""),
-        computerId = computerId,
-        computerName = json.optString("computerName", computerId),
-        capabilities = json.optJSONArray("capabilities").toStringSet()
-            .mapNotNull(Operation::fromWire)
-            .toSet(),
-        grantedScopes = json.optJSONArray("grantedScopes").toStringSet()
-            .mapNotNull(Scope::fromWire)
-            .toSet(),
+    val supported = parseSupportedProtocols(json, protocolVersion)
+    if (supported is SupportedProtocols.Malformed) {
+        return StatusParseResult.Malformed(supported.detail)
+    }
+
+    return StatusParseResult.Ok(
+        ComputerStatus(
+            protocolVersion = protocolVersion,
+            supportedProtocols = (supported as SupportedProtocols.Valid).versions,
+            adapterVersion = json.optString("adapterVersion", ""),
+            hostVersion = json.optString("hostVersion", ""),
+            computerId = computerId,
+            computerName = json.optString("computerName", computerId),
+            capabilities = json.optJSONArray("capabilities").toStringSet()
+                .mapNotNull(Operation::fromWire)
+                .toSet(),
+            grantedScopes = json.optJSONArray("grantedScopes").toStringSet()
+                .mapNotNull(Scope::fromWire)
+                .toSet(),
+        ),
     )
 }
 
-private fun JSONArray?.toIntSet(): Set<Int> {
-    if (this == null) return emptySet()
-    val out = mutableSetOf<Int>()
-    for (index in 0 until length()) {
-        val value = optInt(index, -1)
-        if (value > 0) out.add(value)
+/** The outcome of reading `supportedProtocols`. */
+private sealed interface SupportedProtocols {
+    data class Valid(val versions: Set<Int>) : SupportedProtocols
+    data class Malformed(val detail: String) : SupportedProtocols
+}
+
+/**
+ * Strictly read `supportedProtocols`.
+ *
+ * Three rules, matching the three malformed inputs the review demonstrated:
+ *
+ * - Present but not an array → contract error (`"invalid"`).
+ * - An element that is not a positive integer → contract error (`[1.9]`). No
+ *   truncation.
+ * - An empty array → contract error (`[]`). A computer that supports nothing is
+ *   broken, not compatible, and inferring the current version from an empty list
+ *   is precisely the bug that was reproduced.
+ *
+ * **The one permitted compatibility branch**: the field is entirely absent and
+ * `protocolVersion` is valid. That is a legacy single-version handshake. It is
+ * written as its own rule because letting it share a branch with the three
+ * errors above is how an error becomes "compatible".
+ */
+private fun parseSupportedProtocols(json: JSONObject, protocolVersion: Int): SupportedProtocols {
+    if (!json.has("supportedProtocols") || json.isNull("supportedProtocols")) {
+        return SupportedProtocols.Valid(setOf(protocolVersion))
     }
-    return out
+
+    val array = json.optJSONArray("supportedProtocols")
+        ?: return SupportedProtocols.Malformed(
+            "supportedProtocols 存在但不是数组。" +
+                "不能把它当成单版本握手——字段类型错误意味着两端对协议的理解已经不一致。",
+        )
+
+    if (array.length() == 0) {
+        return SupportedProtocols.Malformed(
+            "supportedProtocols 是空数组。一台不声明任何协议版本的电脑无法协商，" +
+                "不能推断成支持当前版本。",
+        )
+    }
+
+    val versions = mutableSetOf<Int>()
+    for (index in 0 until array.length()) {
+        val item = array.opt(index)
+        val value = when (item) {
+            is Int -> item
+            is Long -> if (item in Int.MIN_VALUE..Int.MAX_VALUE) item.toInt() else null
+            else -> null
+        }
+        if (value == null || value <= 0) {
+            return SupportedProtocols.Malformed(
+                "supportedProtocols[$index] 不是正整数。版本号不做截断或类型转换。",
+            )
+        }
+        versions.add(value)
+    }
+    return SupportedProtocols.Valid(versions)
 }
 
 private fun JSONArray?.toStringSet(): Set<String> {
@@ -322,18 +431,26 @@ internal enum class Refusal(val wire: String) {
     UnknownOperation("UNKNOWN_OPERATION"),
     MissingCapability("MISSING_CAPABILITY"),
     ForbiddenScope("FORBIDDEN_SCOPE"),
-    WrongComputer("WRONG_COMPUTER"),
-    CommandConflict("COMMAND_CONFLICT"),
-    CommandStateUnknown("COMMAND_STATE_UNKNOWN"),
     Unauthenticated("UNAUTHENTICATED"),
     DeviceRevoked("DEVICE_REVOKED"),
+    WrongComputer("WRONG_COMPUTER"),
     InvalidPayload("INVALID_PAYLOAD"),
+    CommandConflict("COMMAND_CONFLICT"),
+    CommandStateUnknown("COMMAND_STATE_UNKNOWN"),
+
     /**
-     * decision 字段读了但读不懂。与 UnknownApprovalType 不同：
-     * 那个说的是"问题认不出来"，这个说的是"答案认不出来"。
+     * The decision field was present but unreadable. Distinct from
+     * {@link UnknownApprovalType}: this says the *answer* could not be read, not
+     * that the *question* was unrecognised.
      */
     MalformedApprovalDecision("MALFORMED_APPROVAL_DECISION"),
+
+    /**
+     * The approval being answered could not be placed. Requires an authoritative
+     * record of pending approvals, which does not exist yet.
+     */
     UnknownApprovalType("UNKNOWN_APPROVAL_TYPE"),
+
     HandlerFailed("HANDLER_FAILED"),
     Unknown(""),
     ;
@@ -360,19 +477,19 @@ internal fun refusalMessage(refusal: Refusal, computerName: String): String = wh
         "这台电脑安装的 Harness 版本做不到这个操作。请在电脑上更新插件，或在电脑上直接处理。"
     Refusal.ForbiddenScope ->
         "这台手机没有获得执行该操作的授权。请在「$computerName」上检查手机连接设置。"
+    Refusal.Unauthenticated ->
+        "这个请求没有说明是哪台手机发的，因此被拒绝。请重新配对。"
+    Refusal.DeviceRevoked ->
+        "这台手机在电脑上的授权已经被移除。更新 App 不会恢复它，请在电脑上重新配对。"
     Refusal.WrongComputer ->
         "这条命令是发给另一台电脑的。请确认当前选中的电脑。"
+    Refusal.InvalidPayload ->
+        "这个请求缺少必要内容，因此没有执行。"
     Refusal.CommandConflict ->
         "这个命令编号已经用于另一个请求。请重新发起一次。"
     Refusal.CommandStateUnknown ->
         "这条命令已经送达，但结果未知——它可能执行了，也可能没有。" +
             "请先到任务列表确认，再决定是否重发。"
-    Refusal.Unauthenticated ->
-        "这个请求没有说明是哪台手机发的，因此被拒绝。请重新配对。"
-    Refusal.DeviceRevoked ->
-        "这台手机在电脑上的授权已经被移除。**更新 App 不会恢复它**，请在电脑上重新配对。"
-    Refusal.InvalidPayload ->
-        "这个请求缺少必要内容，因此没有执行。"
     Refusal.MalformedApprovalDecision ->
         "这个审批决定无法识别，因此没有被执行。任务会停在这一步等待处理。"
     Refusal.UnknownApprovalType ->

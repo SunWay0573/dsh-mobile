@@ -53,6 +53,7 @@ internal fun ApprovalsScreen(
     computerId: String,
     computerAlias: String,
     state: UiState,
+    decideGate: Gate,
     onBack: () -> Unit,
     onDecide: (allowed: Boolean) -> Unit,
 ) {
@@ -140,9 +141,22 @@ internal fun ApprovalsScreen(
                     }
                     Spacer(Modifier.height(12.dp))
 
+                    // While there is no approval owner, this is not "allowed":
+                    // the computer would refuse every decision, so offering the
+                    // buttons would promise something the system cannot do.
+                    gateReason(decideGate)?.let { reason ->
+                        InfoBanner(
+                            title = stringResource(R.string.appr_title),
+                            body = reason,
+                            tone = Tone.WARN,
+                        )
+                        Spacer(Modifier.height(12.dp))
+                    }
+
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         Button(
                             onClick = { onDecide(false) },
+                            enabled = decideGate is Gate.Allowed,
                             modifier = MinTouchTarget.weight(1f),
                             colors = ButtonDefaults.buttonColors(
                                 containerColor = MobileColors.NeutralSoft,
@@ -151,6 +165,7 @@ internal fun ApprovalsScreen(
                         ) { Text(stringResource(R.string.appr_deny)) }
                         Button(
                             onClick = { onDecide(true) },
+                            enabled = decideGate is Gate.Allowed,
                             modifier = MinTouchTarget.weight(1f),
                         ) { Text(stringResource(R.string.appr_allow_once)) }
                     }

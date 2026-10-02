@@ -60,6 +60,32 @@ const WRITE_OPERATIONS: ReadonlySet<Operation> = new Set<Operation>([
   'question.answer',
 ])
 
+/**
+ * Operations this build always refuses, whatever handlers are registered.
+ *
+ * ## Why this exists
+ *
+ * Capabilities are derived from which handlers are registered, on the reasoning
+ * that the set of handlers is what the build can actually do. That reasoning
+ * breaks here: `approval.decide` has a handler and is still refused on every
+ * request, because verifying *which* approval a decision answers needs an
+ * authoritative record of pending approvals and there is no approval owner yet.
+ *
+ * The review's consequence: a stub with an approval handler made `status`
+ * advertise `approval.decide`, while a well-formed decision was still refused.
+ * A phone that trusts the handshake would show an approval control that cannot
+ * work. Fail-closed was right; advertising it was not.
+ *
+ * So the rule is written down: **an operation is available only if the build can
+ * complete it**, and an operation that is deliberately unimplemented is listed
+ * here rather than left to be inferred from the absence of a handler.
+ */
+const NOT_IMPLEMENTED: ReadonlySet<Operation> = new Set<Operation>([
+  // Needs the approval owner: an authoritative pending record, with ownership
+  // and expiry, so a decision can be matched to one request and consumed once.
+  'approval.decide',
+])
+
 /** What a handler is given beyond the payload. */
 export interface HandlerContext {
   /** The scope the device was checked against, for the handler's own logging. */
@@ -103,7 +129,20 @@ export type CommandOutcome =
 export class MobileAdapter {
   readonly #options: AdapterOptions
   readonly #store: CommandStore
+  /** Advertised in the handshake: what a phone may offer. */
   readonly #capabilities: readonly Operation[]
+
+  /**
+   * What a request may reach: every registered handler.
+   *
+   * Deliberately a different set from `#capabilities`. An operation can be
+   * reachable-but-not-offered — `approval.decide` is exactly that today — and
+   * collapsing the two loses either the honesty of the handshake or the
+   * accuracy of the refusal. If it were only the advertised set, a request for
+   * an unimplemented operation would come back "update the plugin", which would
+   * not help.
+   */
+  readonly #reachable: readonly Operation[]
   readonly #protocols: readonly number[]
 
   constructor(options: AdapterOptions) {
@@ -112,9 +151,13 @@ export class MobileAdapter {
     this.#protocols = options.supportedProtocols ?? [PROTOCOL_VERSION]
     // Iterating OPERATIONS rather than Object.keys keeps the reported order
     // stable, which makes the handshake response diffable between builds.
-    this.#capabilities = OPERATIONS.filter(
+    // Registered handlers minus the deliberately unimplemented ones. Both
+    // halves matter: the handler set says what the code can reach, and
+    // NOT_IMPLEMENTED says what it must not offer yet.
+    this.#reachable = OPERATIONS.filter(
       (operation) => options.handlers[operation] !== undefined,
     )
+    this.#capabilities = this.#reachable.filter((operation) => !NOT_IMPLEMENTED.has(operation))
   }
 
   /** The dedup table, exposed so a durable one can be substituted later. */
@@ -125,7 +168,8 @@ export class MobileAdapter {
   #context(): AdapterContext {
     return {
       supportedProtocols: this.#protocols,
-      capabilities: this.#capabilities,
+      // The reachable set, not the advertised one. See `#reachable`.
+      capabilities: this.#reachable,
       computerId: this.#options.computerId,
     }
   }
@@ -210,6 +254,15 @@ export class MobileAdapter {
     // authoritative record of pending approvals. There is no approval owner yet,
     // so this refuses rather than assuming the request is real: an approval
     // nobody can place must not be actionable.
+    //
+    // Unreachable while NOT_IMPLEMENTED excludes this operation from
+    // capabilities — kept because the two are separate statements and a future
+    // change to one should not silently open the other.
+    // Refused with its own reason rather than the generic "missing capability".
+    // That message says to update the plugin, and updating changes nothing here:
+    // the owner does not exist in any released version either. Sending someone
+    // to update software that will not help is the same mistake as reporting a
+    // revoked grant as a version problem.
     if (operation === 'approval.decide') {
       return {
         status: 'rejected',

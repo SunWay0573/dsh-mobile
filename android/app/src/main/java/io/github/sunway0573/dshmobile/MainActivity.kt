@@ -401,7 +401,18 @@ private fun DshMobileApp(
                             hostVersion = "0.2.0-rc.2（示例）",
                             computerId = computer.computerId,
                             computerName = computer.alias,
-                            capabilities = Operation.entries.toSet(),
+                            // What the real adapter would advertise — which is
+                            // NOT every operation this phone implements.
+                            //
+                            // `approval.decide` is deliberately absent: the
+                            // computer refuses every decision until there is an
+                            // approval owner, and the adapter excludes it from
+                            // its handshake. A fixture that advertised it would
+                            // make the phone offer enabled Allow/Deny buttons
+                            // that could never work, and the gating test would
+                            // pass while the real system was broken.
+                            capabilities = Operation.entries.toSet() -
+                                setOf(Operation.ApprovalDecide),
                             grantedScopes = Scope.entries.toSet(),
                         ),
                     ),

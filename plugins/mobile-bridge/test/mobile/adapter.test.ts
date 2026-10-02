@@ -411,6 +411,55 @@ describe('approvals', () => {
     assert.equal(spy.calls.length, 0, 'the handler must never run without an owner')
   })
 
+  /**
+   * The review's finding: a stub with an approval handler made `status`
+   * advertise `approval.decide`, while a well-formed decision was still always
+   * refused. A phone trusting the handshake would show a control that cannot
+   * work. Fail-closed was right; advertising it was not.
+   */
+  test('approval.decide is not advertised even with a handler registered', () => {
+    const { adapter } = withApproval()
+    assert.ok(
+      !adapter.status('dev-1').capabilities.includes('approval.decide'),
+      'an operation that is always refused must not be offered',
+    )
+  })
+
+  test('and reads are still advertised normally', () => {
+    const adapter = build({
+      handlers: {
+        'computer.status': async () => 'ok',
+        'session.list': async () => [],
+        'approval.decide': async () => 'decided',
+      },
+    })
+    const capabilities = adapter.status('dev-1').capabilities
+    assert.ok(capabilities.includes('session.list'))
+    assert.ok(!capabilities.includes('approval.decide'))
+  })
+
+  /**
+   * Not advertised, but still answered with the reason that is actually true.
+   *
+   * The generic missing-capability message says to update the plugin; updating
+   * would not help, because the approval owner does not exist in any released
+   * version either. Sending someone to update software that will not help is
+   * the same mistake as reporting a revoked grant as a version problem.
+   */
+  test('a request for it says why it cannot be done, not to update', async () => {
+    const { adapter } = withApproval()
+    const result = await adapter.handle(
+      envelope({ operation: 'approval.decide', commandId: 'a', payload: { decision: 'allow-once' } }),
+    )
+    assert.equal(result.status === 'rejected' ? result.code : '', REFUSAL.UNKNOWN_APPROVAL_TYPE)
+    assert.notEqual(result.status === 'rejected' ? result.code : '', REFUSAL.MISSING_CAPABILITY)
+    assert.doesNotMatch(
+      result.status === 'rejected' ? result.message : '',
+      /update the plugin/i,
+      'updating would not help here',
+    )
+  })
+
   test('the two approval refusals are distinguishable', async () => {
     const { adapter } = withApproval()
     const malformed = await adapter.handle(

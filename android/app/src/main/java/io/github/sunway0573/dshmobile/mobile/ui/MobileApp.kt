@@ -30,6 +30,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import io.github.sunway0573.dshmobile.R
 import io.github.sunway0573.dshmobile.mobile.demo.DemoData
+import io.github.sunway0573.dshmobile.mobile.protocol.Operation
 import io.github.sunway0573.dshmobile.mobile.repository.ComputerState
 
 /**
@@ -96,9 +97,17 @@ internal fun MobileApp(
     // shared state would show one's permissions while talking to the other.
     val computerState: ComputerState =
         computerStates[selected.computerId] ?: ComputerState.Offline("尚未连接")
-    val pendingForSelected = DemoData.tasks.count {
-        it.target.computerId == selected.computerId &&
-            it.status == DemoData.TaskStatus.WAITING_APPROVAL
+    // The badge counts approvals — but only when this phone may actually answer
+    // them. A badge saying "1 waiting" over a screen that refuses every decision
+    // tells the user there is something to do and then prevents them doing it.
+    val approvalsGate = gate(computerState, Operation.ApprovalDecide)
+    val pendingForSelected = if (approvalsGate is Gate.Allowed) {
+        DemoData.tasks.count {
+            it.target.computerId == selected.computerId &&
+                it.status == DemoData.TaskStatus.WAITING_APPROVAL
+        }
+    } else {
+        0
     }
 
     Surface(
@@ -130,6 +139,8 @@ internal fun MobileApp(
                                 computerId = selected.computerId,
                                 computerAlias = selected.alias,
                                 state = state,
+                                submitGate = gate(computerState, Operation.TaskSubmit),
+                                cancelGate = gate(computerState, Operation.TaskCancel),
                                 onBack = { tab = Tab.COMPUTERS },
                                 onNewTask = { route = Route.NewTask },
                                 onOpenTask = { route = Route.Conversation(it) },
@@ -142,6 +153,7 @@ internal fun MobileApp(
                                 computerId = selected.computerId,
                                 computerAlias = selected.alias,
                                 state = state,
+                                decideGate = approvalsGate,
                                 onBack = { tab = Tab.TASKS },
                                 onDecide = { route = Route.Decided },
                             )
@@ -152,6 +164,7 @@ internal fun MobileApp(
                     is Route.Conversation -> ConversationScreen(
                         computerAlias = selected.alias,
                         state = state,
+                        sendGate = gate(computerState, Operation.TaskSubmit),
                         onBack = { route = Route.Tabs },
                         onMore = { route = Route.Detail(current.sessionId) },
                     )
@@ -167,6 +180,7 @@ internal fun MobileApp(
                                 computerId = selected.computerId,
                                 computerAlias = selected.alias,
                                 state = state,
+                                decideGate = approvalsGate,
                                 onBack = { route = Route.Tabs },
                                 onDecide = { route = Route.Decided },
                             )

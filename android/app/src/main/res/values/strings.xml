@@ -87,6 +87,11 @@
     <string name="tasks_empty_title">这台电脑上还没有任务</string>
     <string name="tasks_empty_body">点右上角的 ＋，描述你想让它做什么。</string>
     <string name="tasks_new">＋ 新建任务</string>
+    <string name="gate_unavailable">当前电脑不可用</string>
+    <string name="gate_no_scope">这台手机没有获得此操作的授权</string>
+    <string name="gate_no_capability">这台电脑的 Harness 版本不支持此操作</string>
+    <string name="gate_offline">电脑未连接，无法发送</string>
+    <string name="gate_not_implemented">电脑端尚未支持此操作</string>
     <string name="tasks_read_failed_title">读不到任务列表</string>
     <string name="tasks_read_failed_body">电脑有响应，但返回了错误。电脑上的日志会说明原因。</string>
     <string name="tasks_stale_title">暂时连不上</string>
