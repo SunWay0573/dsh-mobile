@@ -95,6 +95,8 @@
     <string name="gate_failed">电脑的回复无法理解，请查看电脑上的日志</string>
     <string name="gate_client_too_old">手机端版本过旧，请更新 App</string>
     <string name="gate_computer_too_old">电脑端版本过旧，请更新电脑上的插件</string>
+    <string name="gate_no_common_version">两端没有共同的协议版本。无法从手机上判断该更新哪一端，请把两端都更新到较新版本</string>
+    <string name="gate_no_usable_operations">协议版本一致，但这台电脑上没有任何可用操作。请在电脑上检查这台手机的授权与插件版本</string>
     <string name="gate_reason_prefix">不可用：</string>
     <string name="tasks_read_failed_title">读不到任务列表</string>
     <string name="tasks_read_failed_body">电脑有响应，但返回了错误。电脑上的日志会说明原因。</string>

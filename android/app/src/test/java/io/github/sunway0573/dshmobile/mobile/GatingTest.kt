@@ -123,6 +123,49 @@ class GatingTest {
         }
     }
 
+    /**
+     * The two states that used to borrow the "update the computer" wording.
+     *
+     * NO_COMMON_VERSION gives no basis for naming one end: neither is strictly
+     * newer, so telling someone to update "the computer" is a coin flip.
+     * NO_USABLE_OPERATIONS can happen when the protocol matches perfectly and
+     * the device simply holds no usable grant — a version instruction there
+     * sends the user to update software that is already fine.
+     */
+    @Test
+    fun no_common_version_does_not_name_a_single_end() {
+        val state = ComputerState.Incompatible(Incompatibility.NO_COMMON_VERSION, "无共同版本")
+        assertEquals(Gate.NoCommonVersion, gate(state, Operation.TaskSubmit))
+        assertNotEquals(
+            "must not claim the computer needs updating",
+            Gate.WrongVersion(clientTooOld = false),
+            gate(state, Operation.TaskSubmit),
+        )
+        assertNotEquals(Gate.WrongVersion(clientTooOld = true), gate(state, Operation.TaskSubmit))
+    }
+
+    @Test
+    fun no_usable_operations_is_not_a_version_problem() {
+        val state = ComputerState.Incompatible(Incompatibility.NO_USABLE_OPERATIONS, "没有可用操作")
+        assertEquals(Gate.NoUsableOperations, gate(state, Operation.TaskSubmit))
+        assertNotEquals(
+            "the protocol matches here; this is capability and permission",
+            Gate.WrongVersion(clientTooOld = false),
+            gate(state, Operation.TaskSubmit),
+        )
+    }
+
+    // Every incompatible kind must produce a *specific* reason, not just "not
+    // the capability one". Asserting only the negative is how the previous
+    // version passed while three kinds shared one wrong message.
+    @Test
+    fun every_incompatible_kind_has_its_own_reason() {
+        val reasons = Incompatibility.entries.map { kind ->
+            gate(ComputerState.Incompatible(kind, "原因"), Operation.TaskSubmit)
+        }
+        assertEquals("four kinds, four distinct reasons", 4, reasons.toSet().size)
+    }
+
     @Test
     fun a_failed_handshake_keeps_its_own_reason() {
         assertEquals(

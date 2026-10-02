@@ -55,6 +55,23 @@ internal sealed interface Gate {
 
     /** The computer answered with something unusable. */
     data object Failed : Gate
+
+    /**
+     * The two ends share no protocol version.
+     *
+     * Deliberately carries no direction: neither end is strictly newer, and
+     * telling someone to update one of them is a guess with a 50% chance of
+     * wasting their time.
+     */
+    data object NoCommonVersion : Gate
+
+    /**
+     * The protocol matches but nothing is usable here.
+     *
+     * Usually a grant problem, sometimes a capability problem, never a version
+     * problem — so it must not borrow the version wording.
+     */
+    data object NoUsableOperations : Gate
 }
 
 /**
@@ -103,14 +120,22 @@ internal fun gate(state: ComputerState, operation: Operation, implemented: Boole
         is ComputerState.Unauthenticated, is ComputerState.Revoked -> Gate.NoComputer
         is ComputerState.Forbidden -> Gate.NoScope
 
-        // Carries the direction with it. "Update one of them" is useless advice
-        // when updating the wrong one changes nothing.
-        is ComputerState.Incompatible ->
-            if (state.kind == Incompatibility.CLIENT_TOO_OLD) {
-                Gate.WrongVersion(clientTooOld = true)
-            } else {
-                Gate.WrongVersion(clientTooOld = false)
-            }
+        // Carries the direction with it, and only claims a direction when there
+        // is one. The previous version mapped everything that was not
+        // CLIENT_TOO_OLD to "update the computer", which is wrong twice over:
+        // NO_COMMON_VERSION gives no basis for naming a single end, and
+        // NO_USABLE_OPERATIONS can happen when the protocol matches perfectly and
+        // the device simply holds no usable grant.
+        is ComputerState.Incompatible -> when (state.kind) {
+            Incompatibility.CLIENT_TOO_OLD -> Gate.WrongVersion(clientTooOld = true)
+            Incompatibility.COMPUTER_TOO_OLD -> Gate.WrongVersion(clientTooOld = false)
+            // No instruction about which end to update, because the two ends
+            // share nothing and neither is strictly newer.
+            Incompatibility.NO_COMMON_VERSION -> Gate.NoCommonVersion
+            // Protocol is fine; this is about capability and permission, so it
+            // must not read as a version problem at all.
+            Incompatibility.NO_USABLE_OPERATIONS -> Gate.NoUsableOperations
+        }
 
         is ComputerState.Failed -> Gate.Failed
     }
@@ -126,6 +151,8 @@ internal fun gateReason(gate: Gate): String? = when (gate) {
     Gate.NotImplemented -> stringResource(R.string.gate_not_implemented)
     Gate.NoComputer -> stringResource(R.string.gate_unavailable)
     Gate.Failed -> stringResource(R.string.gate_failed)
+    Gate.NoCommonVersion -> stringResource(R.string.gate_no_common_version)
+    Gate.NoUsableOperations -> stringResource(R.string.gate_no_usable_operations)
     is Gate.WrongVersion -> stringResource(
         if (gate.clientTooOld) R.string.gate_client_too_old else R.string.gate_computer_too_old,
     )

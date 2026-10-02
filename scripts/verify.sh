@@ -255,12 +255,23 @@ CHECK
     # Deliberately here and not in the plugins section: the Kotlin encoder
     # fixture is written by the Android suite above, so running this earlier
     # would skip every case and report a passing contract that never executed.
+    # The wrapper must propagate node's exit status. An earlier version captured
+    # the output, grepped for "pass [1-9]", and returned that -- so a run with
+    # eleven passes and one failure reported success, because at least one test
+    # passed. A check that cannot fail is worse than no check: it produces
+    # confidence instead of a signal.
     run "cross-language contract (TS consumes the Kotlin encoder output)" bash -c '
       cd plugins/mobile-bridge
       out=$(node --test test/mobile/contract.test.ts 2>&1)
+      status=$?
+      echo "$out" | grep -E "^(\u2139|#) (tests|pass|fail|skipped)" || true
+      if [ "$status" -ne 0 ]; then
+        echo "the contract suite exited $status"
+        echo "$out" | tail -30
+        exit 1
+      fi
       if echo "$out" | grep -qE "skipped [1-9]"; then
-        echo "the contract suite skipped: the encoder fixture was not produced"
-        echo "$out" | grep -E "skipped" | head -2
+        echo "the contract suite skipped: the Kotlin encoder fixture was not produced"
         exit 1
       fi
       echo "$out" | grep -qE "pass [1-9]"
