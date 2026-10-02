@@ -2,7 +2,9 @@ package io.github.sunway0573.dshmobile.mobile.repository
 
 import io.github.sunway0573.dshmobile.mobile.protocol.Incompatibility
 import io.github.sunway0573.dshmobile.mobile.protocol.Negotiation
+import io.github.sunway0573.dshmobile.mobile.protocol.OPERATION_SCOPE
 import io.github.sunway0573.dshmobile.mobile.protocol.Operation
+import io.github.sunway0573.dshmobile.mobile.protocol.Scope
 import io.github.sunway0573.dshmobile.mobile.protocol.Refusal
 import io.github.sunway0573.dshmobile.mobile.protocol.negotiate
 import io.github.sunway0573.dshmobile.mobile.protocol.refusalMessage
@@ -38,11 +40,33 @@ internal sealed interface ComputerState {
         val protocolVersion: Int,
         val hostVersion: String,
         val adapterVersion: String,
+        /**
+         * What the computer says it can do.
+         *
+         * Kept separately from [available] because `available` already has the
+         * grant applied, and the two answer different questions. An operation
+         * the computer offers that this device was not granted is a permission
+         * problem; one the computer does not offer at all is a capability
+         * problem. Those have different fixes, and collapsing them into one set
+         * means the UI cannot tell the user which.
+         */
+        val capabilities: Set<Operation>,
+        /** What this device was granted. A subset check against [OPERATION_SCOPE]. */
+        val grantedScopes: Set<Scope>,
         val available: Set<Operation>,
         val unavailable: Set<Operation>,
     ) : ComputerState {
 
         fun can(operation: Operation): Boolean = available.contains(operation)
+
+        /** The computer offers it and the device holds its scope. */
+        fun hasCapability(operation: Operation): Boolean = capabilities.contains(operation)
+
+        /** The device holds the scope this operation needs. */
+        fun hasScope(operation: Operation): Boolean {
+            val scope = OPERATION_SCOPE[operation] ?: return false
+            return grantedScopes.contains(scope)
+        }
     }
 
     data class Offline(val detail: String) : ComputerState
@@ -117,6 +141,10 @@ internal class SessionRepository(
                     protocolVersion = negotiated.protocolVersion,
                     hostVersion = negotiated.status.hostVersion,
                     adapterVersion = negotiated.status.adapterVersion,
+                    // The raw negotiation result, so a later question about
+                    // *why* an operation is unavailable can still be answered.
+                    capabilities = negotiated.status.capabilities,
+                    grantedScopes = negotiated.status.grantedScopes,
                     available = negotiated.available,
                     unavailable = negotiated.unavailableKnown,
                 )

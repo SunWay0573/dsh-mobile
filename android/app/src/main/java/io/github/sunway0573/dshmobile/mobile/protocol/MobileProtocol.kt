@@ -380,8 +380,19 @@ private sealed interface SupportedProtocols {
  * errors above is how an error becomes "compatible".
  */
 private fun parseSupportedProtocols(json: JSONObject, protocolVersion: Int): SupportedProtocols {
-    if (!json.has("supportedProtocols") || json.isNull("supportedProtocols")) {
+    // Only a genuinely absent field. An explicit `null` is a value the computer
+    // chose to send, and treating it as "absent" made the documented
+    // compatibility rule wider than the documentation said. The review caught
+    // that the implementation and the stated rule disagreed; the test that
+    // pinned the old behaviour was pinning the wrong thing.
+    if (!json.has("supportedProtocols")) {
         return SupportedProtocols.Valid(setOf(protocolVersion))
+    }
+    if (json.isNull("supportedProtocols")) {
+        return SupportedProtocols.Malformed(
+            "supportedProtocols 是显式 null。字段缺失才是旧式单版本握手，" +
+                "显式 null 表示电脑发了这个字段但值为空，两者不能混为一谈。",
+        )
     }
 
     val array = json.optJSONArray("supportedProtocols")

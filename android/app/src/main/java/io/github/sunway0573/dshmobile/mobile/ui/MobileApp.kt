@@ -174,6 +174,10 @@ internal fun MobileApp(
                             Route.Pairing -> PairingScreen(state = state, onBack = { route = Route.Tabs })
                             Route.NewTask -> NewTaskScreen(
                                 computerAlias = selected.alias,
+                                // Recomputed from the current state, so a grant
+                                // revoked while this page is open disables the
+                                // button rather than leaving a stale Allowed.
+                                submitGate = gate(computerState, Operation.TaskSubmit),
                                 onBack = { route = Route.Tabs },
                             )
                             Route.Approvals -> ApprovalsScreen(
@@ -186,6 +190,7 @@ internal fun MobileApp(
                             )
                             is Route.Detail -> DetailScreen(
                                 computerAlias = selected.alias,
+                                cancelGate = gate(computerState, Operation.TaskCancel),
                                 onBack = { route = Route.Conversation(current.sessionId) },
                             )
                             Route.Decided -> ApprovalDecidedScreen(

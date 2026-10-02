@@ -193,6 +193,10 @@ if selected plugins; then
     # 39 tests under test/mobile/ and verify kept reporting green without them.
     # Running each project's own `test` script keeps the two in step, because
     # that script is the one a developer runs by hand.
+    # The cross-language contract suite reads what the Kotlin encoder wrote, so
+    # the Android suite has to have run first. It skips loudly when the fixture
+    # is absent, and the check below turns a silent skip into a failure --
+    # otherwise a missing fixture would look exactly like a passing contract.
     run "sleep-guard tests" bash -c 'cd plugins/sleep-guard && npm test --silent'
     run "mobile-bridge tests" bash -c 'cd plugins/mobile-bridge && npm test --silent'
   fi
@@ -247,6 +251,20 @@ CHECK
       bad "release refuses cleartext by default"
     fi
     run "unit tests" bash -c 'cd android && ./gradlew testDebugUnitTest --no-daemon --quiet'
+
+    # Deliberately here and not in the plugins section: the Kotlin encoder
+    # fixture is written by the Android suite above, so running this earlier
+    # would skip every case and report a passing contract that never executed.
+    run "cross-language contract (TS consumes the Kotlin encoder output)" bash -c '
+      cd plugins/mobile-bridge
+      out=$(node --test test/mobile/contract.test.ts 2>&1)
+      if echo "$out" | grep -qE "skipped [1-9]"; then
+        echo "the contract suite skipped: the encoder fixture was not produced"
+        echo "$out" | grep -E "skipped" | head -2
+        exit 1
+      fi
+      echo "$out" | grep -qE "pass [1-9]"
+    '
     # Building the on-device tests, not running them: running needs a connected
     # device or emulator, which CI does not have.
     #

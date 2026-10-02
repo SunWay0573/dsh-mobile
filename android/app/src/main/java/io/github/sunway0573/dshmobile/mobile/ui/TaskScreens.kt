@@ -79,6 +79,20 @@ internal fun TasksScreen(
         Column(Modifier.padding(horizontal = 12.dp)) {
             DemoBanner()
 
+            // Shown whenever the create entry is disabled, in every branch that
+            // renders a list — not only the empty one. The earlier version
+            // explained it in the empty state and left the normal list with a
+            // greyed-out button and no explanation, which a comment claimed was
+            // handled "below the list" when no such code existed.
+            gateReason(submitGate)?.let { reason ->
+                InfoBanner(
+                    title = stringResource(R.string.tasks_new),
+                    body = reason,
+                    tone = Tone.WARN,
+                )
+                Spacer(Modifier.height(12.dp))
+            }
+
             when (state) {
                 UiState.LOADING -> repeat(4) { SkeletonCard(); Spacer(Modifier.height(12.dp)) }
 

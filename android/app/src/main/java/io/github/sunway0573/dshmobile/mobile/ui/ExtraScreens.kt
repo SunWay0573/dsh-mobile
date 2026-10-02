@@ -17,7 +17,11 @@ import io.github.sunway0573.dshmobile.R
 
 /** New task. The fields are drafted; the transport is work package 3. */
 @Composable
-internal fun NewTaskScreen(computerAlias: String, onBack: () -> Unit) {
+internal fun NewTaskScreen(
+    computerAlias: String,
+    submitGate: Gate,
+    onBack: () -> Unit,
+) {
     Column(Modifier.fillMaxWidth()) {
         ScreenHeader(
             title = stringResource(R.string.new_task_title),
@@ -49,9 +53,17 @@ internal fun NewTaskScreen(computerAlias: String, onBack: () -> Unit) {
                 Tone.BRAND,
             )
             Spacer(Modifier.height(12.dp))
-            Button(onClick = onBack, modifier = MinTouchTarget.fillMaxWidth()) {
-                Text(stringResource(R.string.new_task_start))
-            }
+            // Gated at the moment of the action, not when the screen opened: a
+            // grant revoked while this page is open must disable the button, and
+            // a gate captured on entry would not notice.
+            GatedButton(
+                label = stringResource(R.string.new_task_start),
+                gate = submitGate,
+                onClick = onBack,
+                // Task submission has no transport yet. Allowed would be a lie
+                // even when the protocol says it is permitted.
+                demoOnly = true,
+            )
             Spacer(Modifier.height(24.dp))
         }
     }
@@ -59,7 +71,11 @@ internal fun NewTaskScreen(computerAlias: String, onBack: () -> Unit) {
 
 /** Task detail: model, tools, artifacts. No real data yet. */
 @Composable
-internal fun DetailScreen(computerAlias: String, onBack: () -> Unit) {
+internal fun DetailScreen(
+    computerAlias: String,
+    cancelGate: Gate,
+    onBack: () -> Unit,
+) {
     Column(Modifier.fillMaxWidth()) {
         ScreenHeader(
             title = stringResource(R.string.detail_title),
@@ -87,9 +103,15 @@ internal fun DetailScreen(computerAlias: String, onBack: () -> Unit) {
                 )
             }
             SectionHeader(stringResource(R.string.detail_actions))
-            OutlinedButton(onClick = {}, modifier = MinTouchTarget.fillMaxWidth()) {
-                Text(stringResource(R.string.detail_stop))
-            }
+            // Previously `onClick = {}`, which looked like a working control and
+            // did nothing. The cancel gate computed for the task list was never
+            // passed anywhere, so this is where it actually belongs.
+            GatedButton(
+                label = stringResource(R.string.detail_stop),
+                gate = cancelGate,
+                onClick = onBack,
+                demoOnly = true,
+            )
             Spacer(Modifier.height(24.dp))
         }
     }

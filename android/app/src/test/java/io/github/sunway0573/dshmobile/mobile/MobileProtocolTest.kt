@@ -391,9 +391,21 @@ class StrictVersionParsingTest {
         assertTrue(parseStatus(reply(JSONArray(listOf(-1)))) is StatusParseResult.Malformed)
     }
 
+    /**
+     * An explicit `null` is refused, and this replaces a test that pinned the
+     * opposite.
+     *
+     * The stated rule was "the only compatibility branch is a genuinely absent
+     * field", while the implementation accepted `null` too — so the code did
+     * more than the documentation claimed, and the test made that look
+     * intentional. A field the computer sent with an empty value is a different
+     * fact from a field it does not have.
+     */
     @Test
-    fun a_null_field_is_treated_as_absent() {
-        assertTrue(parseStatus(reply(JSONObject.NULL)) is StatusParseResult.Ok)
+    fun an_explicit_null_is_rejected_not_treated_as_absent() {
+        val result = parseStatus(reply(JSONObject.NULL))
+        assertTrue(result is StatusParseResult.Malformed)
+        assertTrue((result as StatusParseResult.Malformed).detail.contains("null"))
     }
 
     /**
